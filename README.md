@@ -1,9 +1,9 @@
-# tilelight ✦
+# rolight ✦
 
-> **Tiling + Spotlight + light.** Un launcher estilo Spotlight para sway / wlroots que vive residente,
+> **rofi + spotlight + light.** Un launcher estilo Spotlight para sway / wlroots que vive residente,
 > aparece al instante y no se come los recursos. Desde una sola caja hacés casi todo.
 
-`tilelight` es una ventana GTK3 + `gtk-layer-shell` que queda corriendo en segundo plano y se
+`rolight` es una ventana GTK3 + `gtk-layer-shell` que queda corriendo en segundo plano y se
 muestra/oculta por D-Bus en milisegundos. Los resultados se actualizan mientras escribís.
 También trae una versión alternativa en modo script de **rofi** (`spotlight-rofi`).
 
@@ -36,7 +36,7 @@ Escribí `?` para ver todos los atajos.
 ## Instalación
 
 ```sh
-git clone git@github.com:ldgnu/tilelight.git ~/.config/rofi/spotlight
+git clone git@github.com:ldgnu/rolight.git ~/.config/rofi/spotlight
 ```
 
 Dependencias base (Debian/Ubuntu):
@@ -70,7 +70,7 @@ for_window [app_id="spotlight-ai"] floating enable, resize set 960 640, move pos
 - Terminal, buscador web, comando de IA y ciudad del clima: arriba de todo en `spotlight.py`.
 - Acciones rápidas (modo `x`): lista `ACTIONS` en `live.py`. Algunas apuntan a scripts propios en
   `~/.scripts/`; borralas o reemplazalas por los tuyos.
-- Imagen de la pantalla de bloqueo: `~/.config/tilelight/lock.png` o la variable `TILELIGHT_LOCK_IMAGE`.
+- Imagen de la pantalla de bloqueo: `~/.config/rolight/lock.png` o la variable `ROLIGHT_LOCK_IMAGE`.
 - Logs: `~/.cache/spotlight/live.log`.
 
 ## Licencia

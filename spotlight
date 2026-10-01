@@ -3,7 +3,7 @@
 # Si ya está corriendo, lo muestra/oculta al instante por D-Bus.
 # Versión rofi anterior: ~/.config/rofi/spotlight/spotlight-rofi
 dir="$HOME/.config/rofi/spotlight"
-dest=(--session --dest io.github.ldgnu.Tilelight --object-path /io/github/ldgnu/Tilelight)
+dest=(--session --dest io.github.ldgnu.Rolight --object-path /io/github/ldgnu/Rolight)
 if [ "$1" = "--daemon" ]; then
     gdbus introspect "${dest[@]}" >/dev/null 2>&1 && exit 0
 elif [ -n "$1" ]; then

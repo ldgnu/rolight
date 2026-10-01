@@ -30,7 +30,7 @@ os.environ["PATH"] = os.pathsep.join([os.path.expanduser("~/.local/bin"), os.pat
                                       os.environ.get("PATH", "")])
 import spotlight as core  # noqa: E402
 
-APP_ID = "io.github.ldgnu.Tilelight"
+APP_ID = "io.github.ldgnu.Rolight"
 WIDTH = 720
 CLIP_DIR = os.path.join(core.CACHE, "clip")
 AI_SYSTEM = "Respondé en español rioplatense, breve y directo. Sin preámbulos."
@@ -58,7 +58,7 @@ MODES = [
 STAT_WORDS = ("cpu", "mem", "memoria", "ram", "temp", "temperatura", "disco", "disk", "bateria", "batería",
               "battery", "sistema", "stats", "procesos", "proc", "ventilador", "fan", "swap", "carga")
 # imagen para la pantalla de bloqueo (opcional); si no existe, bloquea en negro
-LOCK_IMG = os.path.expanduser(os.environ.get("TILELIGHT_LOCK_IMAGE", "~/.config/tilelight/lock.png"))
+LOCK_IMG = os.path.expanduser(os.environ.get("ROLIGHT_LOCK_IMAGE", "~/.config/rolight/lock.png"))
 KB_ES = ("swaymsg input type:keyboard xkb_layout latam && swaymsg input type:keyboard xkb_variant deadtilde"
          " && swaymsg input type:keyboard xkb_model pc104; notify-send 'Teclado en Español'")
 KB_EN = ("swaymsg input type:keyboard xkb_layout us && swaymsg input type:keyboard xkb_variant intl"
