@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Spotlight en vivo (GTK). Uso: spotlight [modo]   (modos: clip power bt wifi monitor vpn ...)
+# Si ya está corriendo, lo muestra/oculta al instante por D-Bus.
+# Versión rofi anterior: ~/.config/rofi/spotlight/spotlight-rofi
+dir="$HOME/.config/rofi/spotlight"
+dest=(--session --dest io.github.ldgnu.Tilelight --object-path /io/github/ldgnu/Tilelight)
+if [ "$1" = "--daemon" ]; then
+    gdbus introspect "${dest[@]}" >/dev/null 2>&1 && exit 0
+elif [ -n "$1" ]; then
+    gdbus call "${dest[@]}" --method org.freedesktop.Application.ActivateAction \
+        mode "[<'$1'>]" '{}' >/dev/null 2>&1 && exit 0
+else
+    gdbus call "${dest[@]}" --method org.freedesktop.Application.Activate '{}' >/dev/null 2>&1 && exit 0
+fi
+mkdir -p "$HOME/.cache/spotlight"
+exec setsid -f python3 "$dir/live.py" "$@" >>"$HOME/.cache/spotlight/live.log" 2>&1

@@ -1,0 +1,113 @@
+/* Spotlight – estilo macOS con la paleta de sway (colors.conf) */
+
+configuration {
+    show-icons:          true;
+    icon-theme:          "WhiteSur-dark";
+    matching:            "normal";
+    tokenize:            true;
+    sort:                false;
+    drun-display-format: "{name}";
+    kb-cancel:           "Escape,Super+d";
+}
+
+* {
+    bg:        rgba(26, 29, 35, 97%);   /* $bg */
+    bg-input:  rgba(17, 19, 23, 80%);   /* $bg-alt */
+    fg:        #CACCD3;                 /* $white */
+    fg-dim:    #9B9FA9;                 /* $fg */
+    accent:    #50A4E9;                 /* $blue */
+    sel:       rgba(80, 164, 233, 85%);
+    line:      rgba(255, 255, 255, 8%);
+
+    font:             "SF Pro Display 12";
+    background-color: transparent;
+    text-color:       @fg;
+}
+
+window {
+    transparency:     "real";
+    location:         north;
+    anchor:           north;
+    y-offset:         22%;
+    width:            720px;
+    border:           1px solid;
+    border-color:     rgba(255, 255, 255, 12%);
+    border-radius:    16px;
+    background-color: @bg;
+    padding:          0px;
+}
+
+mainbox {
+    spacing:  0px;
+    children: [ "inputbar", "message", "listview" ];
+}
+
+inputbar {
+    padding:   16px 20px;
+    spacing:   12px;
+    border:    0px 0px 1px 0px;
+    border-color: @line;
+    children:  [ "prompt", "entry" ];
+}
+
+prompt {
+    font:       "JetBrainsMono Nerd Font 18";
+    text-color: @fg-dim;
+    vertical-align: 0.5;
+}
+
+entry {
+    font:              "SF Pro Display Light 20";
+    placeholder:       "Buscar apps, archivos, web, IA, cuentas…";
+    placeholder-color: rgba(202, 204, 211, 40%);
+    cursor-color:      @accent;
+    vertical-align:    0.5;
+}
+
+message {
+    padding:      14px 22px;
+    border:       0px 0px 1px 0px;
+    border-color: @line;
+}
+textbox {
+    markup:     true;
+    text-color: @fg;
+    font:       "SF Pro Display 13";
+}
+
+listview {
+    lines:           8;
+    columns:         1;
+    fixed-height:    false;
+    dynamic:         true;
+    scrollbar:       false;
+    padding:         8px;
+    spacing:         2px;
+}
+
+element {
+    padding:       8px 12px;
+    spacing:       14px;
+    border-radius: 9px;
+    cursor:        pointer;
+}
+element normal.normal, element alternate.normal {
+    background-color: transparent;
+    text-color:       @fg;
+}
+element selected.normal {
+    background-color: @sel;
+    text-color:       #FFFFFF;
+}
+element-icon {
+    size:           28px;
+    vertical-align: 0.5;
+    background-color: transparent;
+    text-color:       inherit;
+}
+element-text {
+    vertical-align:   0.5;
+    background-color: transparent;
+    text-color:       inherit;
+    markup:           true;
+}
