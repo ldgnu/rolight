@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Spotlight en vivo para sway (GTK3 + gtk-layer-shell).
+"""Rolight en vivo para sway (GTK3 + gtk-layer-shell).
 
 Queda residente: la primera vez arranca, las siguientes solo muestra/oculta
-(ver el lanzador `spotlight`). Los resultados se actualizan mientras escribís.
+(ver el lanzador `rolight`). Los resultados se actualizan mientras escribís.
 
 Modos (letra + espacio, o Alt+letra; Backspace con la búsqueda vacía sale).
 Escribí «?» para ver la lista de atajos.
@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # sway no siempre exporta ~/.local/bin (claude, kitty, wtype, fd viven ahí)
 os.environ["PATH"] = os.pathsep.join([os.path.expanduser("~/.local/bin"), os.path.expanduser("~/.cargo/bin"),
                                       os.environ.get("PATH", "")])
-import spotlight as core  # noqa: E402
+import core  # noqa: E402
 
 APP_ID = "io.github.ldgnu.Rolight"
 WIDTH = 720
@@ -80,7 +80,7 @@ ACTIONS = [
     ("Silenciar micrófono", "mute microfono mic", "microphone-sensitivity-muted",
      "pactl set-source-mute @DEFAULT_SOURCE@ toggle", "Audio", True),
     ("Mezclador de audio", "volumen audio mixer pulsemixer", "multimedia-volume-control",
-     "kitty --class spotlight-ai --title Audio pulsemixer", "Audio", False),
+     "kitty --class rolight-ai --title Audio pulsemixer", "Audio", False),
     ("Play / Pausa", "musica media play pausa reproducir", "media-playback-start",
      "playerctl play-pause", "Medios", True),
     ("Siguiente tema", "musica media siguiente next", "media-skip-forward", "playerctl next", "Medios", True),
@@ -171,6 +171,7 @@ row:selected label { color: #ffffff; }
   padding: 8px 20px 2px 20px;
 }
 .footer { color: rgba(202, 204, 211, 0.4); font-size: 11px; padding: 6px 18px 9px 18px; }
+.brand { color: rgba(80, 164, 233, 0.75); font-size: 11px; font-weight: 700; padding: 6px 18px 9px 0; }
 """
 
 
@@ -533,7 +534,7 @@ def stats_markup(d):
 
 
 # ── Ventana ──────────────────────────────────────────────────────────
-class Spotlight:
+class Rolight:
     def __init__(self, app):
         self.app = app
         self.gen = 0
@@ -565,7 +566,7 @@ class Spotlight:
         if visual:
             w.set_visual(visual)
         GtkLayerShell.init_for_window(w)
-        GtkLayerShell.set_namespace(w, "spotlight")
+        GtkLayerShell.set_namespace(w, "rolight")
         GtkLayerShell.set_layer(w, GtkLayerShell.Layer.OVERLAY)
         GtkLayerShell.set_anchor(w, GtkLayerShell.Edge.TOP, True)
         if hasattr(GtkLayerShell, "set_keyboard_mode"):
@@ -655,7 +656,12 @@ class Spotlight:
         self.footer.get_style_context().add_class("footer")
         self.footer_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.footer_box.pack_start(self._sep(), False, False, 0)
-        self.footer_box.pack_start(self.footer, False, False, 0)
+        foot = Gtk.Box()
+        foot.pack_start(self.footer, True, True, 0)
+        brand = Gtk.Label(label="✦ rolight", xalign=1)
+        brand.get_style_context().add_class("brand")
+        foot.pack_end(brand, False, False, 0)
+        self.footer_box.pack_start(foot, False, False, 0)
         panel.pack_start(self.footer_box, False, False, 0)
 
     # ── utilidades de UI ─────────────────────────────────────────────
@@ -1229,7 +1235,7 @@ class Spotlight:
         self.weather_cache[city] = res
         msg, days = res
         loc = urllib.parse.quote(city or core.WEATHER_CITY)
-        full = lambda: core.spawn(core.TERMINAL + ["--class", "spotlight-ai", "--title", "Clima", "--hold",  # noqa: E731
+        full = lambda: core.spawn(core.TERMINAL + ["--class", "rolight-ai", "--title", "Clima", "--hold",  # noqa: E731
                                                    "curl", "-s", f"https://wttr.in/{loc}?lang=es"])
         self.render([Item(f"{d}   {t}", f"{desc} · lluvia {rain}%", "weather-few-clouds", full, "Pronóstico")
                      for d, t, desc, rain in days], msg, "↵ pronóstico completo · ⌫ salir")
@@ -1310,7 +1316,7 @@ class Spotlight:
         return go
 
     def _bw_unlock(self):
-        # pinentry necesita el teclado: ocultamos el Spotlight mientras pide la clave
+        # pinentry necesita el teclado: ocultamos el Rolight mientras pide la clave
         self.hide()
 
         def done(res):
@@ -1435,7 +1441,7 @@ class Spotlight:
                     act = self.bg_cmd(["nmcli", "connection", "up", "id", n["ssid"]], f"Conectado a {n['ssid']}")
                 elif n["sec"]:
                     act = (lambda ssid=n["ssid"]: core.spawn(core.TERMINAL + [
-                        "--class", "spotlight-ai", "--title", f"Wi-Fi {ssid}", "--hold",
+                        "--class", "rolight-ai", "--title", f"Wi-Fi {ssid}", "--hold",
                         "nmcli", "--ask", "dev", "wifi", "connect", ssid]))
                 else:
                     act = self.bg_cmd(["nmcli", "dev", "wifi", "connect", n["ssid"]], f"Conectado a {n['ssid']}")
@@ -1479,7 +1485,7 @@ class Spotlight:
                                   "Conectados" if d["connected"] else "Dispositivos"))
             items += [
                 Item("Emparejar dispositivo nuevo", "bluetuith", "bluetooth",
-                     lambda: core.spawn(core.TERMINAL + ["--class", "spotlight-ai", "--title", "Bluetooth",
+                     lambda: core.spawn(core.TERMINAL + ["--class", "rolight-ai", "--title", "Bluetooth",
                                                          "bluetuith"]), "Opciones"),
                 Item("Apagar Bluetooth", "", "bluetooth-disabled",
                      self.bg_cmd(["bluetoothctl", "power", "off"], "Bluetooth apagado"), "Opciones"),
@@ -1503,7 +1509,7 @@ class Spotlight:
                 if ql and ql not in name.lower() and ql not in gw.lower():
                     continue
                 items.append(Item(name, gw, "network-vpn", lambda n=name: core.spawn(core.TERMINAL + [
-                    "--class", "spotlight-ai", "--title", f"VPN {n}", "--hold",
+                    "--class", "rolight-ai", "--title", f"VPN {n}", "--hold",
                     "forticlient", "vpn", "connect", n]), "Perfiles"))
             items.append(Item("Abrir FortiClient", "", "network-vpn",
                               lambda: core.spawn(["forticlient", "gui"]), "Opciones"))
@@ -1557,7 +1563,7 @@ class App(Gtk.Application):
 
     def open_mode(self, mid):
         if self.ui is None:
-            self.ui = Spotlight(self)
+            self.ui = Rolight(self)
         ui = self.ui
         if ui.win.get_visible() and ui.mode == mid:
             return ui.hide()
@@ -1570,7 +1576,7 @@ class App(Gtk.Application):
 
     def do_activate(self):
         if self.ui is None:
-            self.ui = Spotlight(self)
+            self.ui = Rolight(self)
         if self.start_hidden:  # arranque silencioso desde autostart
             self.start_hidden = False
             return

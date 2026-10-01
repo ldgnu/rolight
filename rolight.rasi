@@ -1,4 +1,4 @@
-/* Spotlight – estilo macOS con la paleta de sway (colors.conf) */
+/* Rolight – estilo macOS con la paleta de sway (colors.conf) */
 
 configuration {
     show-icons:          true;

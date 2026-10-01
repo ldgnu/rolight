@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Spotlight para sway: modo script de rofi.
+"""Rolight para sway: modo script de rofi.
 
 Escribí y Enter. Si lo que escribiste no coincide con nada (o usás Ctrl+Enter)
 se interpreta como consulta:
@@ -38,7 +38,7 @@ WEATHER_CITY = ""                        # vacío = detecta por IP
 FILE_SEARCH_ROOT = os.path.expanduser("~")
 MAX_FILES = 40
 HIDE_SSH_HOSTS = {"github.com", "bitbucket.org", "ssh.dev.azure.com", "localhost"}
-CACHE = os.path.expanduser("~/.cache/spotlight")
+CACHE = os.path.expanduser("~/.cache/rolight")
 HISTORY = os.path.join(CACHE, "history.json")
 
 CITY_ALIASES = {
@@ -95,11 +95,13 @@ def spawn(cmd):
 
 
 def notify(title, body=""):
-    spawn(["notify-send", "-a", "Spotlight", title, body])
+    spawn(["notify-send", "-a", "Rolight", title, body])
 
 
 def copy(text):
-    p = subprocess.Popen(["wl-copy"], stdin=subprocess.PIPE, start_new_session=True)
+    # Wayland: wl-copy · X11 (i3, GNOME en Xorg): xclip
+    cmd = ["wl-copy"] if os.environ.get("WAYLAND_DISPLAY") else ["xclip", "-selection", "clipboard"]
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, start_new_session=True)
     p.communicate(text.encode())
     notify("Copiado", text)
 
@@ -483,11 +485,22 @@ def confirm_power(act):
     row("Cancelar", "home:", "dialog-cancel")
 
 
+def logout_cmd():
+    """Cerrar sesión según el WM en uso."""
+    if os.environ.get("SWAYSOCK"):
+        return ["swaymsg", "exit"]
+    if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        return ["hyprctl", "dispatch", "exit"]
+    if os.environ.get("I3SOCK") or shutil.which("i3-msg") and os.environ.get("DESKTOP_SESSION") == "i3":
+        return ["i3-msg", "exit"]
+    return ["loginctl", "terminate-session", os.environ.get("XDG_SESSION_ID", "")]
+
+
 def do_power(act):
     cmds = {
         "lock": ["swaylock", "-f", "-c", "000000"],
         "suspend": ["systemctl", "suspend"],
-        "logout": ["swaymsg", "exit"],
+        "logout": logout_cmd(),
         "reboot": ["systemctl", "reboot"],
         "poweroff": ["systemctl", "poweroff"],
     }
@@ -495,7 +508,7 @@ def do_power(act):
 
 
 def ask_ai(q):
-    spawn(TERMINAL + ["--class", "spotlight-ai", "--title", "Spotlight · IA"] + AI_CMD + [q])
+    spawn(TERMINAL + ["--class", "rolight-ai", "--title", "Rolight · IA"] + AI_CMD + [q])
 
 
 def handle_info(info, text):
@@ -520,7 +533,7 @@ def handle_info(info, text):
         show_weather(val)
     elif kind == "wttr":
         loc = urllib.parse.quote(val or WEATHER_CITY)
-        spawn(TERMINAL + ["--class", "spotlight-ai", "--title", "Clima", "--hold",
+        spawn(TERMINAL + ["--class", "rolight-ai", "--title", "Clima", "--hold",
                           "curl", "-s", f"https://wttr.in/{loc}?lang=es"])
     elif kind == "time":
         header(time_message())

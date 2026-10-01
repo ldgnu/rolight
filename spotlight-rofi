@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# Spotlight para sway (rofi script mode). Toggle: si ya está abierto, lo cierra.
-dir="$HOME/.config/rofi/spotlight"
-pkill -x rofi && exit 0
-exec rofi -show spotlight \
-    -modi "spotlight:$dir/spotlight.py" \
-    -theme "$dir/spotlight.rasi"

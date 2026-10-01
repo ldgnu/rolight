@@ -1,78 +1,284 @@
-# rolight ✦
+<div align="center">
 
-> **rofi + spotlight + light.** Un launcher estilo Spotlight para sway / wlroots que vive residente,
-> aparece al instante y no se come los recursos. Desde una sola caja hacés casi todo.
+# ✦ rolight
 
-`rolight` es una ventana GTK3 + `gtk-layer-shell` que queda corriendo en segundo plano y se
-muestra/oculta por D-Bus en milisegundos. Los resultados se actualizan mientras escribís.
-También trae una versión alternativa en modo script de **rofi** (`spotlight-rofi`).
+**Un launcher liviano para tiling window managers.**
+Apps, archivos, calculadora, clima, Wi-Fi, Bluetooth, VPN, SSH, contraseñas, procesos y más,
+todo desde una sola caja y sin sacar las manos del teclado.
+
+![Python](https://img.shields.io/badge/python-3.9+-3776AB?logo=python&logoColor=white)
+![GTK](https://img.shields.io/badge/GTK-3-4A86CF?logo=gtk&logoColor=white)
+![Wayland](https://img.shields.io/badge/Wayland-layer--shell-FFBC00?logo=wayland&logoColor=black)
+![License](https://img.shields.io/badge/licencia-MIT-green)
+
+<img src="assets/hero.png" width="760" alt="rolight en sway">
+
+</div>
+
+---
+
+## ¿Por qué rolight?
+
+- **Instantáneo.** Queda residente y se muestra/oculta por D-Bus: no hay arranque en frío cada vez que lo abrís.
+- **Liviano.** Python + GTK3, sin Electron ni servicios extra. Los modos pesados (clima, Wi-Fi, archivos)
+  corren en segundo plano y nunca congelan la interfaz.
+- **Todo en un lugar.** 17 modos con atajo de una letra. Escribís y los resultados se actualizan al vuelo.
+- **Sin compilar.** Son scripts: cloná, instalá las dependencias y listo.
+
+## Capturas
+
+| | |
+|---|---|
+| <img src="assets/search.png" alt="Búsqueda"> | <img src="assets/weather.png" alt="Clima"> |
+| **Búsqueda** de apps, web e IA | **Clima** con pronóstico de 3 días |
+| <img src="assets/calc.png" alt="Calculadora"> | <img src="assets/mixed.png" alt="Búsqueda mixta"> |
+| **Calculadora** (Enter copia el resultado) | **Búsqueda mixta**: apps + acciones a la vez |
+| <img src="assets/stats.png" alt="Sistema"> | <img src="assets/help.png" alt="Atajos"> |
+| **Sistema** en vivo: CPU, RAM, temperaturas, procesos | **Atajos**: escribí `?` |
+| <img src="assets/actions.png" alt="Acciones"> | <img src="assets/power.png" alt="Energía"> |
+| **Acciones** rápidas: volumen, brillo, capturas, wallpaper | **Energía** con confirmación |
+| <img src="assets/time.png" alt="Hora"> | |
+| **Hora** en cualquier ciudad | |
 
 ## Modos
 
 Escribí la letra + espacio (o `Alt+letra`). Con la búsqueda vacía, `Backspace` vuelve al inicio.
-Escribí `?` para ver todos los atajos.
 
-| Tecla | Modo | Qué hace |
+| Tecla | Modo | Qué hace | Necesita |
+|:---:|---|---|---|
+| — | Apps | Lanza aplicaciones, ordenadas por uso | — |
+| `c` | Portapapeles | Historial con vista previa; copiar o pegar directo | `copyq`, `wtype` |
+| `f` | Archivos | Búsqueda rápida en `$HOME` | `fd` |
+| `g` | Web | Busca en el navegador; también abre URLs | — |
+| `a` | IA | Pregunta a la IA y responde ahí mismo | `claude` CLI |
+| `=` | Calcular | Calculadora segura | — |
+| `s` | SSH | Hosts de `~/.ssh/config` y `known_hosts` | `kitty` |
+| `r` | Remoto | Perfiles de escritorio remoto | `remmina` |
+| `v` | VPN | Conectar/desconectar perfiles | `forticlient` |
+| `w` | Wi-Fi | Escanear y conectar | `nmcli` |
+| `b` | Bluetooth | Conectar/desconectar dispositivos | `bluetoothctl` |
+| `m` | Monitores | Aplicar perfiles de pantallas | `kanshi` (sway) |
+| `t` | Clima | Clima y pronóstico vía wttr.in | internet |
+| `h` | Hora | Hora local o de cualquier ciudad | — |
+| `p` | Energía | Bloquear, suspender, cerrar sesión, reiniciar, apagar | `swaylock`, `systemd` |
+| `x` | Acciones | Volumen, brillo, media, capturas, wallpaper, teclado | ver abajo |
+| `k` | Bitwarden | Buscar y copiar contraseñas | `rbw` |
+| `i` | Sistema | CPU, memoria, temperatura, disco, batería, procesos | `btop` (opcional) |
+
+Cada modo solo usa su herramienta si la tenés: si falta, ese modo no anda, pero el resto sí.
+
+---
+
+## Compatibilidad
+
+rolight trae **dos interfaces** que comparten la misma lógica:
+
+- **`rolight`**: la versión principal, ventana GTK3 flotante con `gtk-layer-shell`.
+  Necesita un compositor **Wayland con soporte de layer-shell**.
+- **`rolight-rofi`**: la versión alternativa sobre **rofi**. Anda en **X11 y en Wayland**.
+
+| Entorno | Versión recomendada | Estado |
 |---|---|---|
-| — | Apps | Lanza aplicaciones `.desktop`, ordenadas por uso |
-| `c` | Portapapeles | Historial con vista previa, copiar o pegar directo |
-| `f` | Archivos | Búsqueda rápida en `$HOME` con `fd` |
-| `g` | Web | Busca en el navegador; también abre URLs |
-| `a` | IA | Pregunta a `claude` en una terminal flotante |
-| `=` | Calcular | Calculadora segura (Enter copia el resultado) |
-| `s` | SSH | Hosts de `~/.ssh/config` y `known_hosts` |
-| `r` | Remoto | Perfiles de Remmina / RDP |
-| `v` | VPN | Perfiles de FortiClient |
-| `w` | Wi-Fi | Escanear y conectar con `nmcli` |
-| `b` | Bluetooth | Conectar/desconectar dispositivos |
-| `m` | Monitores | Perfiles de `kanshi` |
-| `t` | Clima | Clima y pronóstico (wttr.in) |
-| `h` | Hora | Hora local o de cualquier ciudad |
-| `p` | Energía | Bloquear, suspender, reiniciar, apagar |
-| `x` | Acciones | Volumen, brillo, media, capturas, wallpaper, teclado… |
-| `k` | Bitwarden | Buscar y copiar contraseñas con `rbw` |
-| `i` | Sistema | CPU, memoria, temperatura, disco, batería |
+| **sway** | `rolight` | ✅ Todo funciona (es donde se desarrolla) |
+| **Hyprland** | `rolight` | ✅ Funciona. El modo Monitores y las acciones de teclado son de sway |
+| **river, niri, labwc, Wayfire** | `rolight` | ✅ Layer-shell soportado; mismas salvedades que Hyprland |
+| **KDE Plasma (Wayland)** | `rolight` | 🟡 KWin soporta layer-shell; sin probar a fondo |
+| **i3 / bspwm / Openbox (X11)** | `rolight-rofi` | 🟡 La versión rofi anda; la GTK no (layer-shell es solo Wayland) |
+| **GNOME** | `rolight-rofi` | 🟡 Mutter no soporta layer-shell: usá la versión rofi |
+
+> Lo único atado a sway: el modo **Monitores** (kanshi + `swaymsg`), las acciones de
+> **teclado** y **recargar sway**. Cerrar sesión detecta solo sway, Hyprland, i3 o cualquier sesión de systemd.
+
+---
 
 ## Instalación
 
-```sh
-git clone git@github.com:ldgnu/rolight.git ~/.config/rofi/spotlight
-```
+No hay nada que compilar: rolight son scripts de Python y Bash.
 
-Dependencias base (Debian/Ubuntu):
+### 1. Cloná el repo
 
 ```sh
-sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1 wl-clipboard libnotify-bin
+git clone https://github.com/ldgnu/rolight.git ~/.config/rolight
+mkdir -p ~/.local/bin
+ln -s ~/.config/rolight/rolight ~/.local/bin/rolight
+ln -s ~/.config/rolight/rolight-rofi ~/.local/bin/rolight-rofi
 ```
 
-Opcionales, según los modos que uses: `fd-find`, `network-manager`, `bluez`, `kanshi`, `rbw`,
-`remmina`, `forticlient`, `kitty`, `claude`, `swaylock`, `flameshot`, `playerctl`,
-`brightnessctl`, `variety`, `rofi` (para la versión rofi).
+> Asegurate de que `~/.local/bin` esté en tu `PATH`. Si preferís otra carpeta, el lanzador se ubica solo.
 
-## Configuración en sway
+### 2. Instalá las dependencias
+
+<details open>
+<summary><b>Arch Linux / Manjaro / EndeavourOS</b></summary>
+
+```sh
+# base (obligatorio)
+sudo pacman -S --needed python python-gobject gtk3 gtk-layer-shell wl-clipboard libnotify
+
+# opcionales según los modos que uses
+sudo pacman -S --needed fd networkmanager bluez-utils kanshi copyq wtype kitty \
+    swaylock playerctl brightnessctl libpulse btop rbw remmina flameshot rofi
+
+# fuentes e íconos (opcional, para el look de las capturas)
+sudo pacman -S --needed ttf-jetbrains-mono-nerd
+yay -S whitesur-icon-theme otf-apple-sf-pro      # desde AUR
+```
+</details>
+
+<details open>
+<summary><b>Ubuntu / Debian / Pop!_OS</b></summary>
+
+```sh
+# base (obligatorio)
+sudo apt install python3 python3-gi gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1 wl-clipboard libnotify-bin
+
+# opcionales según los modos que uses
+sudo apt install fd-find network-manager bluez kanshi copyq wtype kitty \
+    swaylock playerctl brightnessctl pulseaudio-utils btop remmina flameshot rofi
+
+# rbw (Bitwarden) no está en apt:
+cargo install rbw
+```
+
+> En Ubuntu `fd` se llama `fdfind`: rolight lo detecta solo.
+</details>
+
+<details>
+<summary><b>Fedora</b></summary>
+
+```sh
+sudo dnf install python3-gobject gtk3 gtk-layer-shell wl-clipboard libnotify \
+    fd-find NetworkManager bluez kanshi copyq wtype kitty swaylock playerctl brightnessctl btop rofi
+```
+</details>
+
+<details>
+<summary><b>X11 (i3, GNOME en Xorg, etc.)</b></summary>
+
+Para la versión rofi en X11 además necesitás `xclip` (en lugar de `wl-clipboard`):
+
+```sh
+sudo pacman -S xclip rofi      # Arch
+sudo apt install xclip rofi    # Ubuntu
+```
+</details>
+
+**Fuentes e íconos:** el estilo usa *SF Pro Display*, *JetBrainsMono Nerd Font* y el tema de íconos
+*WhiteSur-dark*. Si no los tenés, GTK usa los de tu sistema y funciona igual.
+
+### 3. Probalo
+
+```sh
+rolight          # abre / cierra
+rolight calc     # abre directo en un modo (clip, wifi, bt, power, monitor, vpn, ...)
+```
+
+---
+
+## Configuración por window manager
+
+La idea es siempre la misma: **arrancar el daemon al iniciar sesión** (para que abra al instante) y
+**asignar un atajo**. La ventana de la IA y el clima completo usan la clase `rolight-ai`: conviene que flote.
+
+<details open>
+<summary><b>sway</b> — <code>~/.config/sway/config</code></summary>
 
 ```sway
-exec ~/.config/rofi/spotlight/spotlight --daemon
+exec rolight --daemon
 
-bindsym $mod+d      exec ~/.config/rofi/spotlight/spotlight
-bindsym $mod+c      exec ~/.config/rofi/spotlight/spotlight clip
-bindsym $mod+n      exec ~/.config/rofi/spotlight/spotlight wifi
-bindsym $mod+b      exec ~/.config/rofi/spotlight/spotlight bt
-bindsym $mod+Escape exec ~/.config/rofi/spotlight/spotlight power
+bindsym $mod+d      exec rolight
+bindsym $mod+c      exec rolight clip
+bindsym $mod+n      exec rolight wifi
+bindsym $mod+b      exec rolight bt
+bindsym $mod+Escape exec rolight power
 
-for_window [app_id="spotlight-ai"] floating enable, resize set 960 640, move position center
+for_window [app_id="rolight-ai"] floating enable, resize set 960 640, move position center
+```
+</details>
+
+<details>
+<summary><b>Hyprland</b> — <code>~/.config/hypr/hyprland.conf</code></summary>
+
+```ini
+exec-once = rolight --daemon
+
+bind = SUPER, D,      exec, rolight
+bind = SUPER, C,      exec, rolight clip
+bind = SUPER, N,      exec, rolight wifi
+bind = SUPER, B,      exec, rolight bt
+bind = SUPER, Escape, exec, rolight power
+
+windowrulev2 = float,         class:^(rolight-ai)$
+windowrulev2 = size 960 640,  class:^(rolight-ai)$
+windowrulev2 = center,        class:^(rolight-ai)$
+
+# opcional: desenfoque detrás del panel
+layerrule = blur, rolight
+```
+</details>
+
+<details>
+<summary><b>i3</b> (X11, versión rofi) — <code>~/.config/i3/config</code></summary>
+
+```i3
+bindsym $mod+d exec --no-startup-id rolight-rofi
+for_window [class="rolight-ai"] floating enable, resize set 960 640, move position center
+```
+</details>
+
+<details>
+<summary><b>GNOME</b> (versión rofi)</summary>
+
+GNOME no tiene archivo de atajos: se agregan con `gsettings` (o desde
+*Configuración → Teclado → Atajos personalizados*):
+
+```sh
+KEY=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/rolight/
+gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['$KEY']"
+gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KEY name 'rolight'
+gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KEY command "$HOME/.local/bin/rolight-rofi"
+gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KEY binding '<Super>space'
 ```
 
-`spotlight <modo>` abre directo en ese modo (`clip`, `power`, `bt`, `wifi`, `monitor`, `vpn`, …).
+> Ojo: el primer comando reemplaza tus atajos personalizados existentes. Si ya tenés, agregá
+> `'$KEY'` a la lista actual (`gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings`).
+</details>
 
-### Ajustes
+<details>
+<summary><b>river / niri / labwc / Wayfire</b></summary>
 
-- Terminal, buscador web, comando de IA y ciudad del clima: arriba de todo en `spotlight.py`.
-- Acciones rápidas (modo `x`): lista `ACTIONS` en `live.py`. Algunas apuntan a scripts propios en
-  `~/.scripts/`; borralas o reemplazalas por los tuyos.
-- Imagen de la pantalla de bloqueo: `~/.config/rolight/lock.png` o la variable `ROLIGHT_LOCK_IMAGE`.
-- Logs: `~/.cache/spotlight/live.log`.
+Arrancá `rolight --daemon` en el autostart de tu compositor y asigná `rolight` a una tecla.
+Cualquier compositor con `wlr-layer-shell` sirve.
+</details>
+
+---
+
+## Personalización
+
+| Qué | Dónde |
+|---|---|
+| Terminal, buscador web, comando de IA, ciudad del clima | arriba de todo en `core.py` |
+| Acciones rápidas (modo `x`) | lista `ACTIONS` en `rolight.py` |
+| Colores, tamaños y fuentes | bloque `CSS` en `rolight.py` |
+| Ancho del panel | `WIDTH` en `rolight.py` |
+| Tema de la versión rofi | `rolight.rasi` |
+| Imagen de la pantalla de bloqueo | `~/.config/rolight/lock.png` o la variable `ROLIGHT_LOCK_IMAGE` |
+
+Algunas acciones del modo `x` llaman a scripts propios en `~/.scripts/` (historial de notificaciones,
+selector de tema): reemplazalas por las tuyas o borralas.
+
+## Archivos
+
+```
+rolight         lanzador: muestra/oculta por D-Bus o arranca el daemon
+rolight.py      interfaz GTK3 + layer-shell (versión principal)
+core.py         lógica compartida; también es el script de modo para rofi
+rolight-rofi    lanzador de la versión rofi
+rolight.rasi    tema de rofi
+```
+
+Historial y caché: `~/.cache/rolight/` · Log: `~/.cache/rolight/rolight.log`
 
 ## Licencia
 
-MIT
+[MIT](LICENSE) © Javi Solis

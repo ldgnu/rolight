@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Rolight para sway (rofi script mode). Toggle: si ya está abierto, lo cierra.
+dir="$(dirname "$(readlink -f "$0")")"
+pkill -x rofi && exit 0
+exec rofi -show rolight \
+    -modi "rolight:$dir/core.py" \
+    -theme "$dir/rolight.rasi"
