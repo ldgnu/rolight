@@ -54,7 +54,7 @@ Escribí la letra + espacio (o `Alt+letra`). Con la búsqueda vacía, `Backspace
 | `=` | Calcular | Calculadora segura | — |
 | `s` | SSH | Hosts de `~/.ssh/config` y `known_hosts` | `kitty` |
 | `r` | Remoto | Perfiles de escritorio remoto | `remmina` |
-| `v` | VPN | Conectar/desconectar perfiles | `forticlient` |
+| `v` | VPN | Conectar/desconectar VPNs (WireGuard, OpenVPN, OpenConnect…) | `nmcli` |
 | `w` | Wi-Fi | Escanear y conectar | `nmcli` |
 | `b` | Bluetooth | Conectar/desconectar dispositivos | `bluetoothctl` |
 | `m` | Monitores | Aplicar perfiles de pantallas | `kanshi` (sway) |

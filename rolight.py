@@ -117,11 +117,11 @@ MODE_BY_KEY = {m[0]: m for m in MODES}
 MODE_BY_ID = {m[1]: m for m in MODES}
 WORD_MODES = {"clima": "weather", "tiempo": "weather", "hora": "time", "ssh": "ssh",
               "rdp": "rdp", "vnc": "rdp", "ia": "ai", "web": "web", "calc": "calc",
-              "vpn": "vpn", "forti": "vpn", "wifi": "wifi", "bt": "bt",
+              "vpn": "vpn", "wireguard": "vpn", "wifi": "wifi", "bt": "bt",
               "bluetooth": "bt", "monitor": "monitor", "monitores": "monitor"}
 # palabras que, escritas en la búsqueda general, sugieren entrar al modo
 MODE_HINTS = {"clip": "portapapeles clipboard copiar", "files": "archivos files",
-              "vpn": "vpn forticlient fortinet", "wifi": "wifi red wireless internet",
+              "vpn": "vpn wireguard openvpn", "wifi": "wifi red wireless internet",
               "bt": "bluetooth auriculares mouse", "monitor": "monitores pantallas displays kanshi",
               "weather": "clima tiempo", "power": "energia apagar reiniciar",
               "ssh": "ssh servidor", "rdp": "rdp remmina escritorio remoto",
@@ -270,14 +270,16 @@ def bt_devices():
 
 
 def vpn_profiles():
-    names = []
-    for l in sh(["forticlient", "vpn", "list"], 10).splitlines():
-        cols = [c.strip() for c in l.strip().strip("|").split("|")]
-        if len(cols) == 4 and cols[1] and cols[1] != "NAME":
-            names.append((cols[1], cols[3]))
-    status = sh(["forticlient", "vpn", "status"], 10)
-    connected = "" if "no running" in status.lower() else status.strip()
-    return names, connected
+    """Conexiones VPN/WireGuard de NetworkManager: [(nombre, tipo)], [activas]."""
+    names, active = [], []
+    for l in sh(["nmcli", "-t", "-f", "NAME,TYPE,ACTIVE", "connection", "show"], 10).splitlines():
+        parts = nm_split(l)
+        if len(parts) < 3 or parts[1] not in ("vpn", "wireguard"):
+            continue
+        names.append((parts[0], "WireGuard" if parts[1] == "wireguard" else "VPN"))
+        if parts[2] == "yes":
+            active.append(parts[0])
+    return names, active
 
 
 def kanshi_profiles():
@@ -918,7 +920,7 @@ class Rolight:
             "ai": "Preguntale algo a Claude y ↵", "calc": "Ej. 12*3+4, 2^10, 15% de 200",
             "weather": "Ciudad (vacío = donde estás)", "time": "Ciudad (vacío = acá)",
             "power": "Bloquear, suspender, reiniciar…",
-            "vpn": "Perfil de FortiClient", "wifi": "Nombre de la red",
+            "vpn": "Nombre de la VPN", "wifi": "Nombre de la red",
             "bt": "Dispositivo bluetooth", "monitor": "Perfil de monitores",
             "actions": "Teclado, captura, volumen, wallpaper, tema…",
             "bw": "Buscar en Bitwarden",
@@ -1496,25 +1498,26 @@ class Rolight:
     def mode_vpn(self, q):
         def show(res):
             if isinstance(res, Exception):
-                return self.render([], f"Error con FortiClient: {GLib.markup_escape_text(str(res))}")
-            names, connected = res
+                return self.render([], f"Error con NetworkManager: {GLib.markup_escape_text(str(res))}")
+            names, active = res
             ql = q.lower()
             items = []
             card = None
-            if connected:
-                card = f"<b>VPN conectada</b>\n<span alpha='60%'>{GLib.markup_escape_text(connected[:300])}</span>"
-                items.append(Item("Desconectar VPN", "forticlient", "network-vpn-disconnected",
-                                  self.bg_cmd(["forticlient", "vpn", "disconnect"], "VPN desconectada"), "Estado"))
-            for name, gw in names:
-                if ql and ql not in name.lower() and ql not in gw.lower():
+            if active:
+                card = f"<b>VPN conectada</b>\n<span alpha='60%'>{GLib.markup_escape_text(', '.join(active))}</span>"
+                for n in active:
+                    items.append(Item(f"Desconectar {n}", "nmcli", "network-vpn-disconnected",
+                                      self.bg_cmd(["nmcli", "connection", "down", n], "VPN desconectada"), "Estado"))
+            for name, kind in names:
+                if name in active or (ql and ql not in name.lower()):
                     continue
-                items.append(Item(name, gw, "network-vpn", lambda n=name: core.spawn(core.TERMINAL + [
+                items.append(Item(name, kind, "network-vpn", lambda n=name: core.spawn(core.TERMINAL + [
                     "--class", "rolight-ai", "--title", f"VPN {n}", "--hold",
-                    "forticlient", "vpn", "connect", n]), "Perfiles"))
-            items.append(Item("Abrir FortiClient", "", "network-vpn",
-                              lambda: core.spawn(["forticlient", "gui"]), "Opciones"))
-            self.render(items, card, "↵ conectar (pide clave en terminal flotante) · ⌫ salir")
-        self.async_mode("vpn", vpn_profiles, show, "Consultando FortiClient…")
+                    "nmcli", "--ask", "connection", "up", n]), "Perfiles"))
+            items.append(Item("Configurar VPNs", "nm-connection-editor", "network-vpn",
+                              lambda: core.spawn(["nm-connection-editor"]), "Opciones"))
+            self.render(items, card, "↵ conectar (si pide clave, abre una terminal flotante) · ⌫ salir")
+        self.async_mode("vpn", vpn_profiles, show, "Consultando VPNs…")
 
     def mode_monitor(self, q):
         try:
