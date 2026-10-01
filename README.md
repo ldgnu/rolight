@@ -264,6 +264,18 @@ Cualquier compositor con `wlr-layer-shell` sirve.
 | Tema de la versión rofi | `rolight.rasi` |
 | Imagen de la pantalla de bloqueo | `~/.config/rolight/lock.png` o la variable `ROLIGHT_LOCK_IMAGE` |
 
+### Personalizaciones propias (`local.py`)
+
+Si creás `~/.config/rolight/local.py`, rolight lo carga al arrancar y git lo ignora: sirve para cambios
+tuyos que no querés subir. Tiene que exponer `setup(r)`, donde `r` es el módulo de rolight:
+
+```python
+def setup(r):
+    # sumar una acción al modo x
+    r.ACTIONS.append(("Abrir Obsidian", "notas obsidian", "obsidian", "obsidian", "Apps", False))
+    # o reemplazar un modo entero: r.Rolight.mode_vpn = mi_mode_vpn
+```
+
 Algunas acciones del modo `x` llaman a scripts propios en `~/.scripts/` (historial de notificaciones,
 selector de tema): reemplazalas por las tuyas o borralas.
 

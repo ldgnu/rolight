@@ -4,3 +4,4 @@ __pycache__/
 *.bak[0-9]*
 *.log
 lock.png
+local.py

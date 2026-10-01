@@ -1586,6 +1586,17 @@ class App(Gtk.Application):
         self.ui.toggle()
 
 
+# personalizaciones propias fuera del repo: local.py junto a este archivo (ver README)
+_LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "local.py")
+if os.path.exists(_LOCAL):
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location("rolight_local", _LOCAL)
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    if hasattr(_mod, "setup"):
+        _mod.setup(sys.modules[__name__])
+
+
 if __name__ == "__main__":
     app = App()
     if sys.argv[1:] == ["--daemon"]:
