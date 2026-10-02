@@ -1,7 +1,30 @@
 #!/usr/bin/env bash
-# Rolight para sway (rofi script mode). Toggle: si ya está abierto, lo cierra.
+# Rolight para tiling WMs (rofi script mode). Toggle: si ya está abierto, lo cierra.
 dir="$(dirname "$(readlink -f "$0")")"
-pkill -x rofi && exit 0
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/rolight"
+pidfile="$cache/rofi.pid"
+mkdir -p "$cache"
+
+# Toggle por pidfile: `pkill -x rofi` mataría también el drun, el finder y
+# cualquier otro rofi del usuario, y `pkill -f` puede matar al propio shell que
+# invoca este script (el patrón aparece en su cmdline).
+if [ -r "$pidfile" ]; then
+    pid="$(cat "$pidfile" 2>/dev/null)"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null
+        exit 0
+    fi
+fi
+
+# Guardamos la ventana activa para poder "pegar en la ventana activa" desde
+# el historial del portapapeles (rofi le roba el foco al abrirse).
+xdotool getactivewindow > "$cache/active.win" 2>/dev/null || true
+
+# -pid propio: sin esto rolight pelea con el lock de instancia única
+# ($XDG_RUNTIME_DIR/rofi.pid) y le manda toggle a cualquier otro rofi abierto
+# (drun, finder…) en vez de abrirse. Con pidfile propio, rofi hace el toggle
+# solo contra esta instancia.
 exec rofi -show rolight \
+    -pid "$pidfile" \
     -modi "rolight:$dir/core.py" \
     -theme "$dir/rolight.rasi"

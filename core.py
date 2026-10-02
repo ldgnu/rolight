@@ -23,9 +23,11 @@ import math
 import operator
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo, available_timezones
@@ -36,6 +38,7 @@ TERMINAL = ["kitty"]
 AI_BACKEND = "opencode"                  # "opencode" o "claude"
 WEATHER_CITY = ""                        # vacío = detecta por IP
 FILE_SEARCH_ROOT = os.path.expanduser("~")
+FIND_HIDDEN = os.environ.get("ROLIGHT_FIND_HIDDEN", "") not in ("", "0", "no")
 MAX_FILES = 40
 HIDE_SSH_HOSTS = {"github.com", "bitbucket.org", "ssh.dev.azure.com", "localhost"}
 CACHE = os.path.expanduser("~/.cache/rolight")
@@ -344,8 +347,13 @@ def time_message(city=""):
 def find_files(q):
     fd = shutil.which("fd") or shutil.which("fdfind")
     if fd:
-        cmd = [fd, "--ignore-case", "--max-results", str(MAX_FILES), "--exclude", "node_modules",
-               "--exclude", ".git", "--", q, FILE_SEARCH_ROOT]
+        cmd = [fd, "--ignore-case", "--max-results", str(MAX_FILES),
+               "--exclude", "node_modules", "--exclude", ".git", "--", q, FILE_SEARCH_ROOT]
+        # fd ignora las carpetas ocultas, así que ~/.config, ~/.ssh, etc. quedan
+        # fuera. FIND_HIDDEN=1 lo activa; por default no, para no cambiar el
+        # comportamiento de la versión GTK.
+        if FIND_HIDDEN:
+            cmd[1:1] = ["--hidden", "--exclude", ".cache"]
     else:
         cmd = ["find", FILE_SEARCH_ROOT, "-maxdepth", "6", "-not", "-path", "*/.*",
                "-iname", f"*{q}*"]
@@ -381,6 +389,348 @@ def show_files(q):
     row(f"Buscar «{q}» en la web", f"web:{q}", "web-browser")
 
 
+# ── Utilidades de red / NM ───────────────────────────────────────────
+def nmcli_fields(line):
+    """Divide una línea de `nmcli -t` respetando los ':' escapados (\\:)."""
+    out, cur, i = [], "", 0
+    while i < len(line):
+        c = line[i]
+        if c == "\\" and i + 1 < len(line) and line[i + 1] == ":":
+            cur += ":"
+            i += 2
+        elif c == ":":
+            out.append(cur)
+            cur = ""
+            i += 1
+        else:
+            cur += c
+            i += 1
+    out.append(cur)
+    return out
+
+
+def nmcli(args, timeout=15):
+    """Ejecuta nmcli y devuelve stdout, o None si no está / falla."""
+    if not shutil.which("nmcli"):
+        return None
+    try:
+        p = subprocess.run(["nmcli", "-t"] + args, capture_output=True,
+                           text=True, timeout=timeout)
+    except Exception:
+        return None
+    return p.stdout if p.returncode == 0 else None
+
+
+# ── Portapapeles (copyq) ─────────────────────────────────────────────
+def copyq_eval(js, timeout=6):
+    if not shutil.which("copyq"):
+        return None
+    try:
+        p = subprocess.run(["copyq", "eval", "--", js], capture_output=True,
+                           text=True, timeout=timeout)
+    except Exception:
+        return None
+    return p.stdout if p.returncode == 0 else None
+
+
+def copyq_run(*args, timeout=5):
+    if not shutil.which("copyq"):
+        return False
+    try:
+        return subprocess.run(["copyq", *args], capture_output=True,
+                              text=True, timeout=timeout).returncode == 0
+    except Exception:
+        return False
+
+
+def oneline(s, n=70):
+    s = re.sub(r"\s+", " ", s.replace("\n", " ")).strip()
+    return s[:n] + "…" if len(s) > n else s
+
+
+def show_clipboard(q=""):
+    if not shutil.which("copyq"):
+        header("El portapapeles necesita <b>copyq</b>")
+        row("Instalar con: sudo pacman -S copyq", "hint:", "dialog-error")
+        return
+    # Traemos todo en una sola llamada: 200 `copyq read` suenan a ~5 s.
+    raw = copyq_eval("for (let i = 0; i < count(); i++) "
+                     'print(i + "\\x1e" + str(read(i)).slice(0, 2000))')
+    if raw is None:
+        header("El daemon de <b>copyq</b> no responde")
+        row("Levantarlo", "clip-ping:", "media-playback-start", "exec copyq")
+        return
+    # Cada item abre con "<índice>\x1e"; los items multilínea rompen el split por líneas.
+    parts = re.split(r"(\d+)\x1e", raw)
+    items = {}
+    for i in range(1, len(parts) - 1, 2):
+        items[int(parts[i])] = parts[i + 1].rstrip("\n")
+
+    q = q.strip().lower()
+    hits = [(i, t) for i, t in items.items()
+            if t.strip() and (not q or q in t.lower())]
+
+    head = f"<b>Portapapeles</b> · {len(items)} entradas"
+    if q:
+        head += f" · «{esc(q)}»"
+    header(head if hits else f"{head}<br>Sin coincidencias")
+    for i, txt in hits[:MAX_FILES]:
+        row(oneline(txt) or "(vacío)", f"clip:{i}",
+            "edit-paste" if i == 0 else "", f"#{i} · {len(txt)} car.")
+    if hits:
+        row("Pegar en la ventana activa", f"clip-paste:{hits[0][0]}",
+            "go-next", "copia y envía Ctrl+Shift+V")
+    else:
+        row("Volver", "home:", "go-home")
+
+
+def do_clip(i, paste=False):
+    # `copyq select N copy` no se usa para poner el texto: en X11 hay
+    # instalaciones donde copyq lee bien pero no logra tomar la propiedad del
+    # portapapeles ("Failed to copy to clipboard"). copy() usa wl-copy/xclip
+    # directo, que sí funciona, y de paso copyq registra el item nuevo.
+    txt = (copyq_eval(f"str(read({int(i)}))") or "")
+    if not txt:
+        notify("copyq no devolvió nada", f"la entrada #{i} está vacía")
+        return
+    copy(txt.rstrip("\n"))
+    copyq_run("select", str(i))  # deja copyq apuntando a esta entrada
+    if not paste:
+        return
+    # refocus de la ventana que tenía el foco antes de abrir rofi
+    try:
+        with open(os.path.join(CACHE, "active.win")) as f:
+            wid = f.read().strip()
+        if wid:
+            spawn(["xdotool", "windowactivate", "--sync", wid])
+            time.sleep(0.2)
+            spawn(["xdotool", "key", "--clearmodifiers", "ctrl+shift+v"])
+            return
+    except Exception:
+        pass
+    notify("Copiado", "rofi no pudo recuperar el foco anterior")
+
+
+# ── Bluetooth ────────────────────────────────────────────────────────
+def bt_paired():
+    out = subprocess.run(["bluetoothctl", "devices", "Paired"], capture_output=True,
+                         text=True, timeout=5).stdout
+    devs = []
+    for line in out.splitlines():
+        m = re.match(r"Device\s+([0-9A-Fa-f:]{17})\s+(.+)", line)
+        if m:
+            devs.append((m.group(1), m.group(2).strip()))
+    return devs
+
+
+def bt_connected(mac):
+    try:
+        out = subprocess.run(["bluetoothctl", "info", mac], capture_output=True,
+                             text=True, timeout=5).stdout
+    except Exception:
+        return False
+    m = re.search(r"Connected:\s*(yes|no)", out)
+    return bool(m and m.group(1) == "yes")
+
+
+def show_bluetooth(q=""):
+    if not shutil.which("bluetoothctl"):
+        header("El modo Bluetooth necesita <b>bluetoothctl</b>")
+        row("Instalar con: sudo pacman -S bluez-utils", "hint:", "dialog-error")
+        return
+    q = q.strip().lower()
+    devs = bt_paired()
+    on = [d for d in devs if bt_connected(d[0])]
+    header(f"<b>Bluetooth</b> · {len(on)} de {len(devs)} conectados")
+    for mac, name in devs:
+        if q and q not in name.lower():
+            continue
+        conn = bt_connected(mac)
+        row(f"{'● ' if conn else '○ '}{name}",
+            f"bt-{'disc' if conn else 'conn'}:{mac}",
+            "audio-volume-high" if conn else "bluetooth",
+            mac, "" if conn else "conectar")
+    if not devs:
+        row("Emparejá algo con bluetoothctl", "hint:", "bluetooth", "bluetoothctl")
+    row("Abrir bluetuith (TUI)", "bt-tui:", "utilities-terminal", "terminal flotante")
+
+
+def do_bt(mac, disconnect=False):
+    verb = "disconnect" if disconnect else "connect"
+    subprocess.run(["bluetoothctl", "disconnect" if disconnect else "connect", mac],
+                   capture_output=True, timeout=10)
+    notify("Bluetooth", f"{'desconectado' if disconnect else 'conectado'}: {mac}")
+
+
+# ── Wi-Fi ────────────────────────────────────────────────────────────
+def wifi_networks():
+    out = nmcli(["-f", "IN-USE,SSID,SIGNAL,SECURITY", "device", "wifi", "list",
+                 "--rescan", "yes"], timeout=20)
+    if out is None:
+        return None
+    nets, seen = [], set()
+    for line in out.splitlines():
+        f = nmcli_fields(line)
+        if len(f) < 4 or not f[1]:
+            continue
+        key = f[1]
+        if key in seen:
+            continue
+        seen.add(key)
+        nets.append((f[0] == "*", key, f[2], f[3]))
+    nets.sort(key=lambda n: (not n[0], -int(n[2] or 0)))
+    return nets
+
+
+def show_wifi(q=""):
+    if not shutil.which("nmcli"):
+        header("El modo Wi-Fi necesita <b>nmcli</b>")
+        return
+    nets = wifi_networks()
+    if nets is None:
+        header("No pude hablar con NetworkManager")
+        row("Reintentar", "wifi:", "view-refresh")
+        row("Abrir nmtui", "wifi-tui:", "utilities-terminal")
+        return
+    q = q.strip().lower()
+    shown = [n for n in nets if not q or q in n[1].lower()]
+    on = [n for n in nets if n[0]]
+    header(f"<b>Wi-Fi</b> · {len(shown)} redes" + (f" · conectada: {esc(on[0][1])}" if on else ""))
+    for active, ssid, sig, sec in shown:
+        row(f"{'● ' if active else ''}{ssid}", f"wifi:{urllib.parse.quote(ssid, safe='')}",
+            "network-wireless-connected" if active else "network-wireless",
+            f"{sig}% · {sec or 'abierta'}" + (" · activa" if active else ""))
+    row("Abrir nmtui (TUI)", "wifi-tui:", "utilities-terminal", "gestión completa")
+
+
+def do_wifi(ssid):
+    ssid = urllib.parse.unquote(ssid)
+    subprocess.run(["nmcli", "device", "wifi", "connect", ssid],
+                   capture_output=True, timeout=30)
+    notify("Wi-Fi", f"conectando a {ssid}…")
+
+
+# ── VPN ──────────────────────────────────────────────────────────────
+def vpn_conns():
+    out = nmcli(["-f", "NAME,TYPE,STATE", "connection", "show"])
+    if out is None:
+        return None
+    res = []
+    for line in out.splitlines():
+        f = nmcli_fields(line)
+        if len(f) >= 3 and f[1] in ("vpn", "wireguard", "openvpn"):
+            res.append((f[0], f[1], f[2]))
+    return res
+
+
+def show_vpn(q=""):
+    if not shutil.which("nmcli"):
+        header("El modo VPN necesita <b>nmcli</b>")
+        return
+    conns = vpn_conns()
+    if conns is None:
+        header("No pude hablar con NetworkManager")
+        row("Reintentar", "vpn:", "view-refresh")
+        return
+    q = q.strip().lower()
+    shown = [c for c in conns if not q or q in c[0].lower()]
+    active = [c for c in conns if c[2] == "activated"]
+    header(f"<b>VPN</b> · {len(conns)} perfiles"
+           + (f" · {esc(active[0][0])} activa" if active else ""))
+    if not conns:
+        row("No hay perfiles VPN en NetworkManager", "hint:", "network-vpn")
+    for name, typ, state in shown:
+        up = state == "activated"
+        row(f"{'● ' if up else '○ '}{name}",
+            f"vpn-{'down' if up else 'up'}:{urllib.parse.quote(name, safe='')}",
+            "network-vpn" if up else "network-offline",
+            f"{typ} · {state}")
+    if not shown and conns:
+        row("Volver", "vpn:", "go-home")
+
+
+def do_vpn(name, up):
+    name = urllib.parse.unquote(name)
+    subprocess.run(["nmcli", "connection", "up" if up else "down", name],
+                   capture_output=True, timeout=30)
+    notify("VPN", f"{'conectando' if up else 'desconectando'}: {name}")
+
+
+# ── Bitwarden (bw) ───────────────────────────────────────────────────
+def bw_items(q):
+    """Busca items con `bw`. Devuelve (items, error)."""
+    bw = shutil.which("bw") or shutil.which("rbw")
+    if not bw:
+        return None, "Necesitás <b>bw</b> (o rbw) en el PATH"
+    if bw.endswith("rbw"):
+        try:
+            p = subprocess.run(["rbw", "list", "items"], capture_output=True,
+                               text=True, timeout=20)
+        except Exception:
+            return None, "rbw falló"
+        if p.returncode != 0:
+            return None, "No pude leer la bóveda (¿desbloqueada?)"
+        try:
+            items = json.loads(p.stdout or "[]")
+        except Exception:
+            return None, "respuesta inválida de rbw"
+    else:
+        try:
+            p = subprocess.run(["bw", "sync"], capture_output=True, text=True, timeout=30)
+            if p.returncode != 0:
+                err = oneline(p.stderr or p.stdout, 160)
+                hint = ("<br>Desbloqueá con <b>bw unlock</b> en una terminal."
+                        if "locked" in err.lower() else "")
+                return None, f"<b>bw</b>: {esc(err)}{hint}"
+            p = subprocess.run(["bw", "list", "items", "--search", q],
+                               capture_output=True, text=True, timeout=20)
+        except subprocess.TimeoutExpired:
+            return None, "bw tardó demasiado (¿sin red?)"
+        except Exception:
+            return None, "bw falló"
+        if p.returncode != 0:
+            return None, f"bw: {oneline(p.stderr or p.stdout, 120)}"
+        try:
+            items = json.loads(p.stdout or "[]")
+        except Exception:
+            return None, "respuesta inválida de bw"
+    if q:
+        ql = q.lower()
+        items = [i for i in items if ql in (i.get("name") or "").lower()
+                 or ql in (i.get("login", {}) or {}).get("username", "").lower()]
+    return items, None
+
+
+def show_bw(q=""):
+    q = q.strip()
+    items, err = bw_items(q)
+    if err:
+        header(err)
+        unlock = "locked" in err.lower()
+        row("Abrir terminal para " + ("desbloquear" if unlock else "iniciar sesión"),
+            f"bw-login:{'unlock' if unlock else 'login'}", "utilities-terminal",
+            "bw unlock" if unlock else "bw login")
+        return
+    head = "<b>Bitwarden</b>" + (f" · «{esc(q)}»" if q else "")
+    header(head if items else f"{head}<br>Sin resultados")
+    for it in items[:MAX_FILES]:
+        login = (it.get("login") or {})
+        user = login.get("username") or ""
+        row(it.get("name") or "(sin nombre)", f"bw:{it.get('id')}", "dialog-password",
+            user, (user + " " + (it.get("notes") or "")).strip())
+    if not items:
+        row("Volver", "home:", "go-home")
+
+
+def do_bw(item_id):
+    p = subprocess.run(["bw", "get", "password", item_id],
+                       capture_output=True, text=True, timeout=15)
+    if p.returncode != 0 or not p.stdout.strip():
+        notify("Bitwarden", "no pude leer la contraseña")
+        return
+    copy(p.stdout.strip())
+
+
 # ── Pantallas ────────────────────────────────────────────────────────
 POWER = [
     ("Bloquear pantalla", "lock", "system-lock-screen", "lock bloquear"),
@@ -410,6 +760,16 @@ def show_home():
         "rdp vnc escritorio remoto")
     for title, act, icon, kw in POWER:
         row(title, f"power:{act}", icon, "sistema", kw)
+    # Modos por prefijo: letra + espacio (o la letra sola). Se listan acá para
+    # que sean descubribles sin leer el README.
+    for label, info, icon, sub, kw in (
+        ("Portapapeles", "clip-home:", "edit-paste", "historial · c", "clipboard copiar pegar portapapeles"),
+        ("Bluetooth", "bt-home:", "bluetooth", "conectar · b", "bluetooth btPairing"),
+        ("Wi-Fi", "wifi-home:", "network-wireless", "redes · w", "wifi inalambrico red"),
+        ("VPN", "vpn-home:", "network-vpn", "perfiles · v", "vpn wireguard openvpn"),
+        ("Bitwarden", "bw-home:", "dialog-password", "bóveda · k", "bitwarden clave password"),
+    ):
+        row(label, info, icon, sub, kw)
 
 
 def show_query(t):
@@ -443,6 +803,22 @@ def show_query(t):
         if hhmm:
             row(f"Copiar {hhmm.group()}", f"copy:{hhmm.group()}", "edit-copy")
         return
+    # ── modos de herramientas: letra + espacio (o la letra sola) ──
+    m = re.match(r"^(c|clip|clipboard|portapapeles)(?:\s+(.*))?$", low)
+    if m:
+        return show_clipboard(m.group(2) or "")
+    m = re.match(r"^(b|bt|bluetooth)(?:\s+(.*))?$", low)
+    if m:
+        return show_bluetooth(m.group(2) or "")
+    m = re.match(r"^(w|wifi|wi-fi)(?:\s+(.*))?$", low)
+    if m:
+        return show_wifi(m.group(2) or "")
+    m = re.match(r"^(v|vpn)(?:\s+(.*))?$", low)
+    if m:
+        return show_vpn(m.group(2) or "")
+    m = re.match(r"^(k|kb|bw|bitwarden)(?:\s+(.*))?$", low)
+    if m:
+        return show_bw(m.group(2) or "")
     if re.match(r"^(https?://|www\.)\S+$|^[\w-]+(\.[\w-]+)+(/\S*)?$", t) and not calc(t):
         url = t if t.startswith("http") else "https://" + t
         return open_url(url)
@@ -496,9 +872,40 @@ def logout_cmd():
     return ["loginctl", "terminate-session", os.environ.get("XDG_SESSION_ID", "")]
 
 
+def lock_cmd():
+    """Comando de bloqueo de pantalla para el WM actual.
+
+    Wayland → swaylock. X11 (i3/bspwm) → el script de lock del WM si existe
+    (suele aplicar blur al fondo), o i3lock / xsecurelock.
+    Se puede forzar con ROLIGHT_LOCK_CMD. Devuelve None si no hay ninguno.
+    """
+    override = os.environ.get("ROLIGHT_LOCK_CMD")
+    if override:
+        return shlex.split(override)
+    wayland = bool(os.environ.get("WAYLAND_DISPLAY"))
+    if not wayland:
+        xdg = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+        for script in (os.path.join(xdg, "i3/scripts/lock.sh"),
+                       os.path.join(xdg, "bspwm/scripts/lock.sh")):
+            if os.access(script, os.X_OK):
+                return [script]
+    # Lockers nativos de cada lado: i3lock es de X11 y no sirve en Wayland.
+    cands = (["swaylock", "-f", "-c", "000000"],) if wayland else (["i3lock"], ["xsecurelock"])
+    for cand in cands:
+        if shutil.which(cand[0]):
+            return cand
+    return None
+
+
 def do_power(act):
+    if act == "lock":
+        cmd = lock_cmd()
+        if not cmd:
+            notify("Sin locker de pantalla", "instalá i3lock, swaylock o xsecurelock")
+            return
+        spawn(cmd)
+        return
     cmds = {
-        "lock": ["swaylock", "-f", "-c", "000000"],
         "suspend": ["systemctl", "suspend"],
         "logout": logout_cmd(),
         "reboot": ["systemctl", "reboot"],
@@ -560,6 +967,45 @@ def handle_info(info, text):
         show_files(val)
     elif kind == "file":
         spawn(["xdg-open", val])
+    elif kind == "clip":
+        do_clip(int(val) if val.isdigit() else 0)
+    elif kind == "clip-paste":
+        do_clip(int(val) if val.isdigit() else 0, paste=True)
+    elif kind == "clip-ping":
+        spawn(["copyq"])
+    elif kind == "bt-conn":
+        do_bt(val, disconnect=False)
+    elif kind == "bt-disc":
+        do_bt(val, disconnect=True)
+    elif kind == "bt-tui":
+        spawn(TERMINAL + ["--class", "rolight-ai", "--title", "bluetuith",
+                          "bluetuith"])
+    elif kind == "wifi":
+        do_wifi(val)
+    elif kind == "wifi-tui":
+        spawn(TERMINAL + ["--class", "rolight-ai", "--title", "nmtui", "nmtui"])
+    elif kind == "vpn-up":
+        do_vpn(val, up=True)
+    elif kind == "vpn-down":
+        do_vpn(val, up=False)
+    elif kind == "bw":
+        do_bw(val)
+    elif kind == "bw-unlock":
+        spawn(TERMINAL + ["--class", "rolight-ai", "--title", "Bitwarden",
+                          "bw", "unlock"])
+    elif kind == "bw-login":
+        spawn(TERMINAL + ["--class", "rolight-ai", "--title", "Bitwarden",
+                          "bw", val])
+    elif kind == "clip-home":
+        show_clipboard("")
+    elif kind == "bt-home":
+        show_bluetooth("")
+    elif kind == "wifi-home":
+        show_wifi("")
+    elif kind == "vpn-home":
+        show_vpn("")
+    elif kind == "bw-home":
+        show_bw("")
     else:
         show_query(text)
 

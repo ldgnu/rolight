@@ -68,6 +68,11 @@ Escribí la letra + espacio (o `Alt+letra`). Con la búsqueda vacía, `Backspace
 
 Cada modo solo usa su herramienta si la tenés: si falta, ese modo no anda, pero el resto sí.
 
+La tabla de arriba es de la **versión GTK** (Wayland). En la **versión rofi** (X11)
+no todas existen: hay Portapapeles, Bluetooth, Wi-Fi, VPN y Bitwarden, pero no
+Sesiones IA, Sistema, Monitores ni Acciones — y se llegan escribiendo la letra más
+un espacio. Está detallado en la [sección de i3](#configuración-por-window-manager).
+
 ---
 
 ## Compatibilidad
@@ -124,6 +129,13 @@ sudo pacman -S --needed fd networkmanager bluez-utils kanshi copyq wtype kitty \
 sudo pacman -S --needed ttf-jetbrains-mono-nerd
 yay -S whitesur-icon-theme otf-apple-sf-pro      # desde AUR
 ```
+
+En **i3 u otro X11** no instalés `gtk-layer-shell` ni `wtype` (son Wayland); la
+versión GTK no anda ahí. Agregá lo que usa la versión rofi:
+
+```sh
+sudo pacman -S --needed xclip xdotool i3lock       # o xsel
+```
 </details>
 
 <details open>
@@ -140,6 +152,9 @@ sudo apt install fd-find network-manager bluez kanshi copyq wtype kitty \
 # rbw (Bitwarden) no está en apt:
 cargo install rbw
 ```
+
+En **X11** (i3, GNOME en Xorg): `sudo apt install xclip xdotool i3lock`. La
+versión GTK necesita layer-shell, que es solo Wayland.
 
 > En Ubuntu `fd` se llama `fdfind`: rolight lo detecta solo.
 </details>
@@ -223,8 +238,39 @@ layerrule = blur, rolight
 
 ```i3
 bindsym $mod+d exec --no-startup-id rolight-rofi
+# Sin esto i3 tilea a pantalla completa las terminales que abre rolight.
 for_window [class="rolight-ai"] floating enable, resize set 960 640, move position center
 ```
+
+No hace falta daemon ni autostart: la versión rofi abre y cierra al vuelo.
+
+**Modos por prefijo.** La versión rofi no tiene teclas de modo como la GTK: se
+escriben en el lanzador letra + espacio y se pulsa Enter.
+
+| Escribís | Modo |
+| --- | --- |
+| `c algo` | Portapapeles (historial de `copyq`, Enter copia, *Pegar* en la ventana activa) |
+| `b algo` | Bluetooth (`bluetoothctl`) |
+| `w algo` | Wi-Fi (`nmcli`) |
+| `v algo` | VPN (`nmcli`) |
+| `k algo` | Bitwarden (`bw` o `rbw`) |
+| `f algo` o `/algo` | Archivos (`fd`) |
+| `g algo` | Web · `ssh host` · `rdp host` · `clima` · `hora en …` |
+
+Si tu rice ya tiene TUI para algo (bluetuith, nmtui…), esos modos igual ofrecen
+abrirlo: no se duplica la lógica, se delega.
+
+Dos variables de entorno opcionales:
+
+- `ROLIGHT_FIND_HIDDEN=1` — que la búsqueda de archivos entre también en carpetas
+  ocultas (`~/.config`, `~/.ssh`…). Por default está **off**, porque `fd` las
+  ignora y activarlo cambia los resultados.
+- `ROLIGHT_LOCK_CMD` — fuerza el locker: `i3lock -i ~/wall.png`, por ejemplo. Sin
+  esto se usa `~/.config/i3/scripts/lock.sh` si existe, si no `i3lock` o
+  `xsecurelock`.
+
+Para el bloqueo en X11 hace falta `xclip` (o `xsel`) y `xdotool`; el historial del
+portapapeles usa `copyq`.
 </details>
 
 <details>
