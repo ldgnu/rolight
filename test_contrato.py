@@ -74,5 +74,65 @@ class TestContratoCoreGtk(unittest.TestCase):
         self.assertFalse(core.FIND_HIDDEN)
 
 
+class TestRofiRetv(unittest.TestCase):
+    """Cómo llama rofi al script.
+
+    rofi pasa el texto que se está escribiendo con ROFI_RETV=2, NO con 0.
+    (0 es solo el arranque, con argv vacío.) Comprobado con un probe que
+    logueaba cada llamada. Si main() solo mira retv==0, la búsqueda en vivo y el
+    auto-lanzamiento de apps no corren nunca y parece que "hay que darle Enter".
+    """
+
+    def _correr(self, retv, argv):
+        import contextlib
+        import io
+        import core
+        lanzadas = []
+        core.launch_app = lambda did, path: lanzadas.append(did)
+        core.spawn = lambda cmd: None
+        guard = os.path.join(core.CACHE, "autolaunch.test")
+        try:
+            os.remove(guard)
+        except OSError:
+            pass
+        os.environ["ROFI_RETV"] = str(retv)
+        old_argv, old_info = sys.argv, os.environ.pop("ROFI_INFO", None)
+        sys.argv = ["core.py", *argv]
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                core.main()
+        finally:
+            sys.argv = old_argv
+            os.environ.pop("ROFI_RETV", None)
+            if old_info is not None:
+                os.environ["ROFI_INFO"] = old_info
+        return lanzadas, buf.getvalue()
+
+    def test_texto_al_tipear_usa_retv_2(self):
+        """Con retv=2 y el texto, tiene que interpretar la búsqueda."""
+        _, out = self._correr(2, ["2+2*3"])
+        self.assertIn("=", out)
+
+    def test_palabra_de_sistema_al_tipear(self):
+        _, out = self._correr(2, ["cpu"])
+        self.assertIn("Sistema", out)
+
+    def test_accion_al_tipear(self):
+        _, out = self._correr(2, ["bloquear"])
+        self.assertIn("Seguro", out)
+
+    def test_app_exacta_al_tipear(self):
+        """Sin Enter: una coincidencia exacta tiene que lanzar."""
+        lanzadas, _ = self._correr(2, ["kitty"])
+        self.assertEqual(lanzadas, ["kitty.desktop"])
+
+    def test_arranque_vacio(self):
+        lanzadas, _ = self._correr(0, [])
+        self.assertEqual(lanzadas, [])
+        os.remove(os.path.join(os.path.expanduser("~/.cache/rolight"),
+                               "autolaunch.kitty.desktop"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

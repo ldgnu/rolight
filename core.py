@@ -1712,8 +1712,12 @@ def main():
     retv = int(os.environ.get("ROFI_RETV", "0"))
     arg = sys.argv[1] if len(sys.argv) > 1 else ""
     info = os.environ.get("ROFI_INFO", "")
-    if retv == 0:
-        # rofi re-llama al script en cada tecla y pasa el texto en argv[1].
+
+    # rofi llama al script en cada tecla, pero el texto llega con ROFI_RETV=2,
+    # no con 0 (0 es solo el arranque, con argv vacío). Comprobado con un probe:
+    # mientras tipeás solo aparecen llamadas RETV=2. Si esto mira solo retv==0,
+    # la búsqueda en vivo y el auto-lanzamiento nunca corren.
+    if retv in (0, 2):
         q = arg.strip()
         if q.lower() in STAT_WORDS:
             return show_system()
