@@ -1296,12 +1296,17 @@ STAT_WORDS = ("cpu", "mem", "memoria", "ram", "temp", "temperatura", "disco", "d
               "bateria", "batería", "battery", "sistema", "stats", "procesos", "proc",
               "ventilador", "fan", "swap", "carga")
 
+# Spotlight: al abrir, solo la barra con el saludo; los resultados aparecen al
+# escribir. False = mostrar la lista de apps al abrir, como antes.
+SPOTLIGHT_HOME = True
 
-def show_home():
-    header()  # el saludo va en el placeholder, no acá (salía duplicado)
-    # Las vistas de herramientas van PRIMERO. Si fueran al final, escribir "cpu"
-    # las dejaba debajo de cpu-x y de las demás apps que matchean, y con 8
-    # líneas visibles nunca llegabas a verlas.
+
+def _show_home_list():
+    """La lista completa: vistas rápidas, apps, clima, hora, ssh, energía.
+
+    Solo se usa si SPOTLIGHT_HOME está en False; con Spotlight (default) al abrir
+    no se muestra nada, se escribe y aparecen los resultados.
+    """
     for label, info, icon, sub, kw in HOME_VIEWS:
         row(label, info, icon, sub, kw)
     hist = load_history()
@@ -1319,6 +1324,17 @@ def show_home():
     row("Remmina", "app-remmina", "org.remmina.Remmina", "", "rdp vnc escritorio remoto")
     for title, act, icon, kw in POWER:
         row(title, f"power:{act}", icon, "", kw)
+
+
+def show_home():
+    """Al abrir: solo la barra con el saludo, como Spotlight.
+
+    Las apps, la web, la IA y el sistema aparecen recién cuando se escribe
+    algo. SPOTLIGHT_HOME=False devuelve la lista de apps al abrir.
+    """
+    header()  # el saludo va en el placeholder, no acá (salía duplicado)
+    if not SPOTLIGHT_HOME:
+        _show_home_list()
 
 
 def show_apps_like(q, limit=8):
