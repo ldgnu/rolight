@@ -15,6 +15,7 @@ se interpreta como consulta:
   cualquier otra cosa   menú: web / IA / archivos
 """
 import ast
+import base64
 import configparser
 import datetime as dt
 import glob
@@ -610,6 +611,464 @@ def do_wifi(ssid):
     notify("Wi-Fi", f"conectando a {ssid}…")
 
 
+# ── Sesiones IA (Claude Code / OpenCode / Hermes) ────────────────────
+def _claude_sessions(limit=40):
+    out = []
+    files = glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl"))
+    for path in sorted(files, key=lambda p: os.path.getmtime(p), reverse=True)[:limit]:
+        try:
+            with open(path, "rb") as f:
+                data = f.read(30_000_000)
+        except OSError:
+            continue
+        titles = re.findall(rb'"(?:customTitle|aiTitle|summary)":"((?:[^"\\]|\\.)*)"', data)
+        cwd = re.search(rb'"cwd":"((?:[^"\\]|\\.)*)"', data)
+        if not titles and not cwd:
+            continue
+        title = json.loads(b'"' + titles[-1] + b'"') if titles else ""
+        out.append(("Claude", title or "(sin título)",
+                    json.loads(b'"' + cwd.group(1) + b'"') if cwd else "",
+                    os.path.getmtime(path),
+                    ["claude", "--resume", os.path.basename(path)[:-6]]))
+    return out
+
+
+def _sqlite_rows(path, sql):
+    import sqlite3
+    if not os.path.exists(path):
+        return []
+    db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
+    try:
+        return db.execute(sql).fetchall()
+    finally:
+        db.close()
+
+
+def _opencode_sessions(limit=40):
+    rows = _sqlite_rows(os.path.expanduser("~/.local/share/opencode/opencode.db"),
+                        "SELECT id, title, directory, time_updated FROM session "
+                        "WHERE parent_id IS NULL AND time_archived IS NULL "
+                        f"ORDER BY time_updated DESC LIMIT {limit}")
+    return [("OpenCode", t or "(sin título)", d or "", u / 1000, ["opencode", "-s", i])
+            for i, t, d, u in rows]
+
+
+def _hermes_sessions(limit=40):
+    rows = _sqlite_rows(os.path.expanduser("~/.hermes/state.db"),
+                        "SELECT id, title, cwd, COALESCE(ended_at, started_at) FROM sessions "
+                        "WHERE parent_session_id IS NULL AND COALESCE(archived, 0) = 0 "
+                        "AND source != 'subagent' "
+                        f"ORDER BY started_at DESC LIMIT {limit}")
+    return [("Hermes", t or "(sin título)", d or "", u or 0, ["hermes", "--resume", i])
+            for i, t, d, u in rows]
+
+
+def ai_sessions():
+    """(herramienta, título, carpeta, ts, cmd) de las sesiones recientes."""
+    out = []
+    for tool, fn in (("claude", _claude_sessions), ("opencode", _opencode_sessions),
+                     ("hermes", _hermes_sessions)):
+        if shutil.which(tool):
+            try:
+                out += fn()
+            except Exception:  # noqa: BLE001
+                pass
+    return sorted(out, key=lambda r: r[3], reverse=True)[:150]
+
+
+def ago(ts):
+    if not ts:
+        return ""
+    d = max(0, dt.datetime.now().timestamp() - ts)
+    if d < 60:
+        return "ahora"
+    if d < 3600:
+        return f"hace {int(d // 60)} min"
+    if d < 86400:
+        return f"hace {int(d // 3600)} h"
+    return f"hace {int(d // 86400)} d"
+
+
+def show_sessions(q=""):
+    header("<b>Sesiones IA</b> · buscando…")
+    res = ai_sessions()
+    if not res:
+        header("No encontré sesiones de Claude Code, OpenCode ni Hermes")
+        row("Volver", "home:", "go-home")
+        return
+    words = q.lower().split()
+    home = os.path.expanduser("~")
+    icons = {"Claude": "dialog-information", "OpenCode": "utilities-terminal",
+             "Hermes": "emblem-documents"}
+    shown = 0
+    for tool, title, cwd, ts, cmd in res:
+        where = cwd.replace(home, "~", 1) if cwd else ""
+        if words and not all(w in f"{tool} {title} {where}".lower() for w in words):
+            continue
+        # `cd` antes de exec: varias herramientas guardan la ruta en la sesión.
+        run = ["sh", "-c", 'cd "$0" 2>/dev/null; exec "$@"', cwd or home] + cmd
+        import base64
+        payload = base64.b64encode(json.dumps(run).encode()).decode()
+        row(oneline(title, 52), f"ses:{payload}", icons.get(tool, "utilities-terminal"),
+            f"{tool} · {where or '~'} · {ago(ts)}" if where else f"{tool} · {ago(ts)}")
+        shown += 1
+        if shown >= 60:
+            break
+    if not shown:
+        header(f"Sin sesiones que coincidan con «{esc(q)}»")
+        row("Volver", "sessions-home:", "go-back")
+
+
+def do_session(payload):
+    try:
+        run = json.loads(base64.b64decode(payload).decode())
+    except Exception:
+        notify("Sesión inválida", payload[:40])
+        return
+    spawn(TERMINAL + ["--class", "rolight-ai", "--title", run[-1][:50]] + run)
+
+
+# ── Sistema (CPU / RAM / disco / temperaturas / procesos) ─────────────
+def _read(path, default=""):
+    try:
+        with open(path) as f:
+            return f.read()
+    except OSError:
+        return default
+
+
+def _gb(b):
+    return f"{b / 1024 ** 3:.1f} GB"
+
+
+def _bar(pct, width=18):
+    pct = max(0, min(100, pct))
+    full = round(pct / 100 * width)
+    color = "#75AD47" if pct < 60 else "#D09214" if pct < 85 else "#F8747E"
+    return (f"<span font_family='JetBrainsMono Nerd Font Mono' foreground='{color}'>"
+            f"{'█' * full}</span>"
+            f"<span font_family='JetBrainsMono Nerd Font Mono' alpha='25%'>"
+            f"{'█' * (width - full)}</span>")
+
+
+def _tcolor(t):
+    return "#75AD47" if t < 65 else "#D09214" if t < 85 else "#F8747E"
+
+
+def cpu_now():
+    """% de uso en el último intervalo, leyendo /proc/stat dos veces."""
+    def snap():
+        for line in _read("/proc/stat").splitlines():
+            if line.startswith("cpu "):
+                f = [int(x) for x in line.split()[1:]]
+                idle = f[3] + (f[4] if len(f) > 4 else 0)
+                return sum(f), idle
+        return 0, 0
+    t1, i1 = snap()
+    time.sleep(0.12)
+    t2, i2 = snap()
+    dt = t2 - t1
+    return 100 * (1 - (i2 - i1) / dt) if dt else 0.0
+
+
+def sensors():
+    """Temps y ventiladores, igual que sensors(1).
+
+    Se parsea la salida humana (no `sensors -u`) porque `-u` mete sufijos
+    `_input`/`_max` en cada label y ensucia el mapeo. Formato típico:
+        coretemp-isa-0000
+        Adapter: ISA adapter
+        Package id 0:  +63.0°C  (high = +84.0°C, crit = +100.0°C)
+    """
+    try:
+        out = subprocess.run(["sensors"], capture_output=True, text=True, timeout=4)
+    except Exception:
+        return {}, []
+    if out.returncode != 0:
+        return {}, []
+    temps, fans, chip = {}, [], None
+    for line in out.stdout.splitlines():
+        # Cabecera de chip: "coretemp-isa-0000", sin ':'. Las líneas "Adapter: …"
+        # sí lo tienen y hay que descartarlas.
+        if line.strip() and ":" not in line:
+            chip = line.strip()
+            temps.setdefault(chip, {})
+            continue
+        m = re.match(r"^\s*([\w][\w ]*?):\s+\+?([\d.]+)°C", line)
+        if m and chip:
+            temps[chip][m.group(1)] = float(m.group(2))
+            continue
+        m = re.match(r"^\s*(fan\d+):\s+([\d.]+)", line)
+        if m:
+            v = float(m.group(2))
+            fans.append(v)
+            # amdgpu reporta fan1/fan2 en rpm en vez de °C.
+            temps.setdefault(m.group(1), {})["rpm"] = v
+    return temps, fans
+
+
+def show_system(q=""):
+    q = q.strip().lower()
+    if q.startswith("p "):
+        return show_procs(q[2:])
+
+    try:
+        import psutil  # noqa: F401
+        have_psutil = True
+    except ImportError:
+        have_psutil = False
+
+    if have_psutil:
+        import psutil
+        cpu = psutil.cpu_percent(interval=0.15)
+        vm, sw, du = psutil.virtual_memory(), psutil.swap_memory(), psutil.disk_usage("/")
+        up = int(dt.datetime.now().timestamp() - psutil.boot_time())
+    else:
+        mi = dict(re.findall(r"(\w+):\s+(\d+)", _read("/proc/meminfo")))
+        cpu = cpu_now()
+        total = int(mi.get("MemTotal", 1)) * 1024
+        used = total - int(mi.get("MemAvailable", 0)) * 1024
+        st = os.statvfs("/")
+        dtot = st.f_blocks * st.f_frsize
+        dud = (st.f_blocks - st.f_bfree) * st.f_frsize
+        vm = type("V", (), {"total": total, "used": used})()
+        sw = type("V", (), {"total": int(mi.get("SwapTotal", 0)) * 1024,
+                            "used": (int(mi.get("SwapTotal", 0)) - int(mi.get("SwapFree", 0))) * 1024})()
+        du = type("V", (), {"total": dtot, "used": dud})()
+        up = float(_read("/proc/uptime", "0").split()[0])
+
+    lbl = lambda t: f"<span font_family='JetBrainsMono Nerd Font Mono' alpha='60%'>{t:<6}</span>"  # noqa: E731
+    lines = [f"{lbl('CPU')} {_bar(cpu)}  <b>{cpu:4.0f}%</b>  "
+             f"<span alpha='60%'>carga {os.getloadavg()[0]:.2f}</span>"]
+    mp = 100 * vm.used / vm.total
+    lines.append(f"{lbl('RAM')} {_bar(mp)}  <b>{mp:4.0f}%</b>  "
+                 f"<span alpha='60%'>{_gb(vm.used)} de {_gb(vm.total)}</span>")
+    if getattr(sw, "total", 0):
+        sp = 100 * sw.used / sw.total
+        lines.append(f"{lbl('Swap')} {_bar(sp)}  <b>{sp:4.0f}%</b>  "
+                     f"<span alpha='60%'>{_gb(sw.used)} de {_gb(sw.total)}</span>")
+    dp = 100 * du.used / du.total
+    aviso = (" · <b><span foreground='#F8747E'>poco espacio</span></b>" if dp >= 90 else "")
+    lines.append(f"{lbl('Disco')} {_bar(dp)}  <b>{dp:4.0f}%</b>  "
+                 f"<span alpha='60%'>{_gb(du.total - du.used)} libres</span>{aviso}")
+
+    t, fans = sensors()
+    # sensors(1) nombra los chips con sufijo de bus ("coretemp-isa-0000",
+    # "nvme-pci-0400"), así que se busca por prefijo.
+    def find(prefix, *labels):
+        for chip in sorted(t):
+            if chip.startswith(prefix):
+                c = t[chip]
+                for lab in labels:
+                    if lab in c:
+                        return c[lab]
+                vals = [v for k, v in c.items() if isinstance(v, (int, float))]
+                return max(vals) if vals else None
+        return None
+
+    parts = []
+    seen = set()
+    for prefix, label, labels in (
+        ("coretemp", "Micro", ("Package id 0",)),
+        ("k10temp", "CPU", ("Tctl", "Tdie")),
+        ("zenpower", "CPU", ("Tdie",)),
+        ("nct6775", "Main", ("CPU", "temp1")),
+        ("amdgpu", "GPU", ("edge", "junction")),
+        ("nouveau", "GPU", ("GPU",)),
+        ("thinkpad", "GPU", ("GPU",)),
+        ("nvme", "SSD", ("Composite",)),
+        ("iwlwifi", "Wi-Fi", ("temp1",)),
+        ("acpitz", "Notebook", ("temp1",)),
+    ):
+        if label in seen:
+            continue
+        val = find(prefix, *labels)
+        if val is not None:
+            seen.add(label)
+            parts.append(f"{label} <b><span foreground='{_tcolor(val)}'>{val:.0f}°</span></b>")
+    if parts:
+        lines.append(f"{lbl('Temp')} " + "  ·  ".join(parts))
+    if fans:
+        lines.append(f"{lbl('Fan')} <span alpha='60%'>"
+                     + " / ".join(f"{v:.0f} rpm" for v in fans) + "</span>")
+    lines.append(f"{lbl('Up')} <span alpha='60%'>{up // 3600}h {up % 3600 // 60}m · "
+                 f"{len(os.sched_getaffinity(0))} núcleos</span>")
+
+    header("<b>Sistema</b><br>" + "<br>".join(lines))
+    if dp >= 90:
+        row("Ver qué ocupa el disco (ncdu)", "sys-ncdu:", "drive-harddisk",
+            "borrar espacio", "disco lleno espacio ncdu du")
+    if have_psutil:
+        row("Ver procesos (psutil)", "sys-procs:", "utilities-system-monitor",
+            "filtrá con: i p <nombre>", "procesos process ps top")
+    else:
+        row("Instalar psutil para el detalle de procesos", "sys-psutil:", "utilities-terminal",
+            "pip install --user psutil", "psutil procesos")
+    row("Abrir btop", "sys-btop:", "utilities-system-monitor", "TUI completo")
+    row("Volver", "home:", "go-home")
+
+
+def show_procs(q=""):
+    try:
+        import psutil
+    except ImportError:
+        show_system("")
+        return
+    # cpu_percent necesita una llamada previa que fije la referencia: la primera
+    # siempre devuelve 0, así que se mide un intervalo real.
+    for p in psutil.process_iter(["pid"]):
+        try:
+            p.cpu_percent(None)
+        except Exception:  # noqa: BLE001
+            pass
+    time.sleep(0.25)
+    procs = []
+    for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent"]):
+        try:
+            i = p.info
+            procs.append((i["cpu_percent"] or 0, i["memory_percent"] or 0,
+                          i["name"] or "?", i["pid"]))
+        except Exception:  # noqa: BLE001
+            continue
+    procs.sort(reverse=True)
+    procs = [p for p in procs if p[0] or p[1]][:40]
+    if q:
+        procs = [p for p in procs if q in p[2].lower() or q in str(p[3])]
+    header(f"<b>Procesos</b> · {'filtrando «' + esc(q) + '»' if q else 'los más activos'}")
+    if not procs:
+        row("Sin coincidencias", "sys-procs:", "go-back")
+        return
+    for cpu, mem, name, pid in procs:
+        row(f"{name}", f"sys-proc:{pid}", "", f"pid {pid} · CPU {cpu:.1f}% · RAM {mem:.1f}%")
+    row("Volver", "sys:", "go-back")
+
+
+# ── Tailscale ────────────────────────────────────────────────────────
+def tailscale_json(timeout=4):
+    if not shutil.which("tailscale"):
+        return None
+    try:
+        p = subprocess.run(["tailscale", "status", "--json"], capture_output=True,
+                           text=True, timeout=timeout)
+    except Exception:
+        return None
+    if p.returncode != 0:
+        return None
+    try:
+        return json.loads(p.stdout or "{}")
+    except Exception:
+        return None
+
+
+def tailscale_up(timeout=20):
+    """Levanta Tailscale. up/down/switch escriben en el socket de root, así que
+    si no estamos en sudo se reintenta con sudo -n (para no quedar esperando una
+    contraseña dentro de un menú)."""
+    if subprocess.run(["tailscale", "up"], capture_output=True,
+                      timeout=timeout).returncode == 0:
+        return True
+    try:
+        return subprocess.run(["sudo", "-n", "tailscale", "up"], capture_output=True,
+                              timeout=timeout).returncode == 0
+    except Exception:
+        return False
+
+
+def tailscale_down(timeout=10):
+    if subprocess.run(["tailscale", "down"], capture_output=True,
+                      timeout=timeout).returncode == 0:
+        return True
+    try:
+        return subprocess.run(["sudo", "-n", "tailscale", "down"], capture_output=True,
+                              timeout=timeout).returncode == 0
+    except Exception:
+        return False
+
+
+def tailscale_ago(segundos):
+    """'hace 3 min' / 'ahora' a partir de un timestamp epoch."""
+    d = max(0, int(dt.datetime.now().timestamp() - segundos))
+    if d < 60:
+        return "ahora"
+    if d < 3600:
+        return f"hace {d // 60} min"
+    if d < 86400:
+        return f"hace {d // 3600} h"
+    return f"hace {d // 86400} d"
+
+
+def show_tailscale(q=""):
+    d = tailscale_json()
+    if d is None:
+        header("No pude hablar con <b>tailscaled</b>")
+        row("¿Está el servicio activo?", "hint:", "dialog-error",
+            "systemctl status tailscaled")
+        row("Volver", "vpn:", "go-back")
+        return
+
+    state = d.get("BackendState") or "Unknown"
+    ips = d.get("TailscaleIPs") or []
+    # BackendState puede quedar "Stopped" mientras el túnel sigue de pie; lo que
+    # manda es tener IP de tailnet y peers, no el estado del backend.
+    running = state == "Running" or bool(ips)
+    state = state if state == "Running" else state.title()
+    host = ((d.get("Self") or {}).get("HostName") or
+            (d.get("Self") or {}).get("DNSName", "").rstrip(".")) or "este equipo"
+    net = d.get("MagicDNSSuffix") or ""
+
+    head = (f"<b>Tailscale</b> · {'conectado' if running else state.lower()}"
+            f"<br>{esc(host)} · {esc(ips[0] if ips else 'sin IP')}"
+            + (f" · <span alpha='60%'>{esc(net)}</span>" if net else ""))
+    q = q.strip().lower()
+
+    if running:
+        row("Desconectar Tailscale", "ts-down:", "network-offline",
+            "toca todo el tráfico de tailnet", "tailscale down desconectar salir")
+    else:
+        row("Conectar Tailscale", "ts-up:", "network-vpn", "tailscale up", "tailscale up conectar")
+
+    peers = []
+    for key, peer in (d.get("Peer") or {}).items():
+        name = (peer.get("HostName") or peer.get("DNSName", "").rstrip(".") or
+                peer.get("TailscaleIPs", ["?"])[0])
+        os_name = (peer.get("OS") or "").lower()
+        icon = {"linux": "computer", "windows": "computer", "darwin": "computer",
+                "ios": "phone", "android": "phone"}.get(os_name, "network-server")
+        last = peer.get("LastSeen") or ""
+        ago = ""
+        if last and last.endswith("Z") and not last.startswith("0001"):
+            try:
+                ago = tailscale_ago(dt.datetime.fromisoformat(
+                    last.replace("Z", "+00:00")).timestamp())
+            except ValueError:
+                ago = ""
+        online = bool(peer.get("Online"))
+        if q and q not in name.lower():
+            continue
+        peers.append((not online, name, icon,
+                      "en línea" if online else (ago or "offline"),
+                      peer.get("TailscaleIPs", [""])[0]))
+    peers.sort()
+
+    if peers:
+        header(head + f"<br><span alpha='60%'>{len(peers)} equipos en el tailnet</span>")
+        for _, name, icon, status, ip in peers:
+            row(name, f"ts-peer:{ip or name}", icon, status)
+    else:
+        header(head)
+        row("Sin equipos que coincidan" if q else "Tailnet vacío", "vpn:", "go-back")
+    row("Abrir VPN (nmcli) para WireGuard/OpenVPN", "vpn:", "network-vpn")
+
+
+def do_ts_peer(ip):
+    """Abre el peer en el navegador de TTS: la URL sirve para ping y para
+    abrir la consola de un nodo propio."""
+    if not ip:
+        return
+    web = os.environ.get("ROLIGHT_TAILSCALE_WEB", "https://tailscale.com")
+    open_url(f"{web}/ping?target={urllib.parse.quote(ip)}")
+
+
 # ── VPN ──────────────────────────────────────────────────────────────
 def vpn_conns():
     out = nmcli(["-f", "NAME,TYPE,STATE", "connection", "show"])
@@ -624,6 +1083,10 @@ def vpn_conns():
 
 
 def show_vpn(q=""):
+    # Tailscale primero: no aparece como perfil en nmcli (es un dispositivo tun),
+    # así que sin esto el tailnet entero es invisible desde rolight.
+    if tailscale_json() is not None:
+        return show_tailscale(q)
     if not shutil.which("nmcli"):
         header("El modo VPN necesita <b>nmcli</b>")
         return
@@ -768,6 +1231,10 @@ def show_home():
         ("Wi-Fi", "wifi-home:", "network-wireless", "redes · w", "wifi inalambrico red"),
         ("VPN", "vpn-home:", "network-vpn", "perfiles · v", "vpn wireguard openvpn"),
         ("Bitwarden", "bw-home:", "dialog-password", "bóveda · k", "bitwarden clave password"),
+        ("Sesiones IA", "sessions-home:", "dialog-information", "retomar · e",
+         "sesion claude opencode hermes charla sesion ia"),
+        ("Sistema", "sys:", "utilities-system-monitor", "cpu ram disco · i",
+         "cpu memoria ram disco temperatura proceso sistema"),
     ):
         row(label, info, icon, sub, kw)
 
@@ -819,6 +1286,12 @@ def show_query(t):
     m = re.match(r"^(k|kb|bw|bitwarden)(?:\s+(.*))?$", low)
     if m:
         return show_bw(m.group(2) or "")
+    m = re.match(r"^(e|ses|sesion|sessions|ai-ses)(?:\s+(.*))?$", low)
+    if m:
+        return show_sessions(m.group(2) or "")
+    m = re.match(r"^(i|sys|sistema|stats|proc|procesos)(?:\s+(.*))?$", low)
+    if m:
+        return show_system(m.group(2) or "")
     if re.match(r"^(https?://|www\.)\S+$|^[\w-]+(\.[\w-]+)+(/\S*)?$", t) and not calc(t):
         url = t if t.startswith("http") else "https://" + t
         return open_url(url)
@@ -988,6 +1461,12 @@ def handle_info(info, text):
         do_vpn(val, up=True)
     elif kind == "vpn-down":
         do_vpn(val, up=False)
+    elif kind == "ts-up":
+        notify("Tailscale", "conectando…" if tailscale_up() else "no pude conectar")
+    elif kind == "ts-down":
+        notify("Tailscale", "desconectado" if tailscale_down() else "no pude desconectar")
+    elif kind == "ts-peer":
+        do_ts_peer(val)
     elif kind == "bw":
         do_bw(val)
     elif kind == "bw-unlock":
@@ -996,6 +1475,30 @@ def handle_info(info, text):
     elif kind == "bw-login":
         spawn(TERMINAL + ["--class", "rolight-ai", "--title", "Bitwarden",
                           "bw", val])
+    elif kind == "ses":
+        do_session(val)
+    elif kind == "sessions-home":
+        show_sessions("")
+    elif kind == "sys":
+        show_system("")
+    elif kind == "sys-procs":
+        show_procs("")
+    elif kind == "sys-proc":
+        if val.isdigit():
+            spawn(TERMINAL + ["--class", "rolight-ai", "--title", f"pid {val}",
+                              "sh", "-c",
+                              f"ps -p {int(val)} -o pid,ppid,user,%cpu,%mem,etime,cmd; "
+                              "printf '\\nEnter para cerrar…'; read"])
+    elif kind == "sys-psutil":
+        spawn(TERMINAL + ["--class", "rolight-ai", "--title", "psutil",
+                          "sh", "-c", "pip install --user psutil; exec bash"])
+    elif kind == "sys-ncdu":
+        spawn(TERMINAL + ["--class", "rolight-ai", "--title", "ncdu", "ncdu", "/"])
+    elif kind == "sys-btop":
+        if shutil.which("btop"):
+            spawn(TERMINAL + ["--class", "rolight-ai", "--title", "btop", "btop"])
+        else:
+            notify("Falta btop", "sudo pacman -S btop")
     elif kind == "clip-home":
         show_clipboard("")
     elif kind == "bt-home":

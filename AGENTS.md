@@ -81,3 +81,13 @@ pulsar Enter.
 - El launcher de rofi usa `-pid` propio: sin eso pelea con el lock de instancia
   única de rofi (`$XDG_RUNTIME_DIR/rofi.pid`) y le manda toggle a cualquier otro
   rofi abierto en vez de abrirse.
+- `sensors()` parsea la salida **humana** de `sensors(1)`, no `sensors -u`: con
+  `-u` cada label viene como `temp1_input`/`temp1_max` y el mapeo se rompe. Los
+  chips además llegan con sufijo de bus (`coretemp-isa-0000`), por eso se buscan
+  por prefijo y no por nombre exacto.
+- Tailscale **no** aparece como perfil en NetworkManager (es un dispositivo tun),
+  así que `v` lo consulta con `tailscale status --json` primero y cae a `nmcli`
+  solo si no está. `BackendState` puede decir `Stopped` con el túnel de pie: lo
+  que manda es tener IP de tailnet.
+- **No pruebes `tailscale up` ni `tailscale down` contra la red real del usuario
+  al testear**: desconecta todo su tailnet. Usá `tailscale status --json`.

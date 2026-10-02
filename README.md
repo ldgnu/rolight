@@ -69,9 +69,10 @@ Escribí la letra + espacio (o `Alt+letra`). Con la búsqueda vacía, `Backspace
 Cada modo solo usa su herramienta si la tenés: si falta, ese modo no anda, pero el resto sí.
 
 La tabla de arriba es de la **versión GTK** (Wayland). En la **versión rofi** (X11)
-no todas existen: hay Portapapeles, Bluetooth, Wi-Fi, VPN y Bitwarden, pero no
-Sesiones IA, Sistema, Monitores ni Acciones — y se llegan escribiendo la letra más
-un espacio. Está detallado en la [sección de i3](#configuración-por-window-manager).
+llegan escribiendo letra + espacio: Portapapeles, Bluetooth, Wi-Fi, VPN, Bitwarden,
+Sesiones IA y Sistema. Las que no existen ahí son **Monitores** y **Acciones**
+(volumen, brillo, capturas), porque dependen de `swaymsg`/`kanshi`. Está detallado
+en la [sección de i3](#configuración-por-window-manager).
 
 ---
 
@@ -252,10 +253,24 @@ escriben en el lanzador letra + espacio y se pulsa Enter.
 | `c algo` | Portapapeles (historial de `copyq`, Enter copia, *Pegar* en la ventana activa) |
 | `b algo` | Bluetooth (`bluetoothctl`) |
 | `w algo` | Wi-Fi (`nmcli`) |
-| `v algo` | VPN (`nmcli`) |
+| `v algo` | VPN: **Tailscale** si está, si no los perfiles de `nmcli` |
 | `k algo` | Bitwarden (`bw` o `rbw`) |
+| `e algo` | Sesiones IA de Claude Code, OpenCode y Hermes |
+| `i` | Sistema: CPU, RAM, swap, disco, temperaturas, ventiladores |
+| `i p algo` | Procesos, filtrables por nombre (`psutil`) |
 | `f algo` o `/algo` | Archivos (`fd`) |
 | `g algo` | Web · `ssh host` · `rdp host` · `clima` · `hora en …` |
+
+**Tailscale** (`v`): Tailscale no aparece como perfil VPN en NetworkManager
+(es un dispositivo tun), así que sin esto el tailnet entero sería invisible. Muestra
+tu hostname, IP, los equipos conectados con su estado, y permite conectar o
+desconectar. Como `up`/`down` escriben en el socket de root, reintenta con
+`sudo -n` si hace falta (no queda esperando una contraseña dentro de un menú).
+Definí `ROLIGHT_TAILSCALE_WEB` si usás una instancia self-hosted o headscale.
+
+**Sistema** (`i`): lee `/proc` y `sensors(1)`, así que no necesita nada instalado.
+Con `psutil` además muestra los procesos con CPU real por proceso, y avisa cuando
+el disco pasa de 90 %.
 
 Si tu rice ya tiene TUI para algo (bluetuith, nmtui…), esos modos igual ofrecen
 abrirlo: no se duplica la lógica, se delega.
