@@ -1300,6 +1300,12 @@ STAT_WORDS = ("cpu", "mem", "memoria", "ram", "temp", "temperatura", "disco", "d
 # escribir. False = mostrar la lista de apps al abrir, como antes.
 SPOTLIGHT_HOME = True
 
+# Lanzar sin Enter: si el nombre escrito coincide exactamente con una app, se
+# abre sola. Las acciones destructivas (apagar, reiniciar, cerrar sesión) NUNCA
+# se auto-confirman: escribir "apagar" no puede apagar la máquina.
+AUTO_LAUNCH = True
+AUTO_LAUNCH_GUARD = 3  # segundos entre relanzamientos de la misma app
+
 
 def _show_home_list():
     """La lista completa: vistas rápidas, apps, clima, hora, ssh, energía.
@@ -1353,6 +1359,46 @@ def show_apps_like(q, limit=8):
             hits.append((-hist.get("app:" + did, 0), name.lower(), name, did, path, icon, sub))
     hits.sort()
     return hits[:limit]
+
+
+def find_exact_app(q):
+    """App que coincide EXACTAMENTE con la búsqueda, o None.
+
+    Compara contra el nombre visible y contra el id del .desktop, porque los
+    nombres traducidos no coinciden con lo que uno escribe: la app se llama
+    "Zen Browser" pero el .desktop es zen.desktop, y escribís "zen".
+
+    Exacto a propósito: si no, escribir "th" a media palabra dispararía
+    Thunderbird. Con coincidencia exacta no hay forma de ejecutar algo que no
+    sea lo que terminás de escribir.
+    """
+    q = q.strip().lower()
+    if len(q) < 3:
+        return None
+    for name, did, path, icon, sub, kw in list_apps():
+        if name.strip().lower() == q or did.lower() == f"{q}.desktop":
+            return name, did, path, icon
+    return None
+
+
+def auto_launch(_name, did, path, _icon=None):
+    """Lanza la app y deja una fila de confirmación. Devuelve True si lanzó."""
+    # Evita relanzar por backspace o por reescribir lo mismo enseguida.
+    guard = os.path.join(CACHE, "autolaunch")
+    try:
+        last = time.time() - os.path.getmtime(guard)
+        if last < AUTO_LAUNCH_GUARD:
+            return False
+    except OSError:
+        pass
+    try:
+        os.makedirs(CACHE, exist_ok=True)
+        open(guard, "w").close()
+    except OSError:
+        pass
+    bump_history("app:" + did)
+    launch_app(did, path)
+    return True
 
 
 def show_query(t):
@@ -1664,13 +1710,20 @@ def main():
     arg = sys.argv[1] if len(sys.argv) > 1 else ""
     info = os.environ.get("ROFI_INFO", "")
     if retv == 0:
-        # rofi re-llama al script en cada tecla y pasa el texto en argv[1]. Con
-        # una palabra de sistema mostramos los datos ya, sin lista ni Enter; con
-        # cualquier otra cosa sigue el filtrado normal de la lista.
-        if arg.strip().lower() in STAT_WORDS:
+        # rofi re-llama al script en cada tecla y pasa el texto en argv[1].
+        q = arg.strip()
+        if q.lower() in STAT_WORDS:
             return show_system()
-        if arg.strip():
-            return show_query(arg.strip())
+        if q:
+            # Coincidencia exacta → se lanza sola, sin Enter.
+            if AUTO_LAUNCH:
+                hit = find_exact_app(q)
+                if hit and auto_launch(*hit):
+                    header(f"→ Lancé <b>{esc(hit[0])}</b> · "
+                           f"seguí escribiendo para otra cosa")
+                    row("Volver al inicio", "home:", "go-home")
+                    return
+            return show_query(q)
         initial_view()()
     elif retv == 1 and info:
         handle_info(info, arg)
