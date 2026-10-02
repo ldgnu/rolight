@@ -23,6 +23,7 @@ import json
 import math
 import operator
 import os
+import random
 import re
 import shlex
 import shutil
@@ -61,6 +62,26 @@ CITY_ALIASES = {
 }
 
 SEP, US = "\0", "\x1f"
+
+# Saludo de la pantalla de inicio. Se sortea en cada apertura, dentro del grupo
+# que corresponde a la hora del día. Vaciar la lista lo desactiva.
+USER_NAME = "Javi"
+GREETINGS = {
+    "mañana": ("Buenos días", "Buen día", "Hola", "Qué onda", "Bárbaro", "Mirá vos"),
+    "tarde": ("Buenas tardes", "Hola", "Qué onda", "Bárbaro", "Todo bien por acá"),
+    "noche": ("Buenas noches", "Hola", "Qué onda", "Bárbaro", "¿Ronda noche?"),
+}
+
+
+def greeting():
+    """Saludo aleatorio según la hora. '' si no hay ninguno configurado."""
+    h = dt.datetime.now().hour
+    grupo = "mañana" if 5 <= h < 13 else "tarde" if h < 20 else "noche"
+    opciones = GREETINGS.get(grupo) or ()
+    if not opciones:
+        return ""
+    saludo = random.choice(opciones)
+    return f"{saludo}, {USER_NAME}…" if USER_NAME else f"{saludo}…"
 
 
 # ── Salida rofi ──────────────────────────────────────────────────────
@@ -1205,7 +1226,7 @@ POWER = [
 
 
 def show_home():
-    header()
+    header(f"<span alpha='65%'>{esc(greeting())}</span>" if greeting() else None)
     hist = load_history()
     apps = list_apps()
     apps.sort(key=lambda a: (-hist.get("app:" + a[1], 0), a[0].lower()))
