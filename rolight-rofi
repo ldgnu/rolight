@@ -46,6 +46,15 @@ esac
 # el historial del portapapeles (rofi le roba el foco al abrirse).
 xdotool getactivewindow > "$cache/active.win" 2>/dev/null || true
 
+# rofi no deja cambiar el placeholder desde script mode, así que el launcher
+# genera el tema con el saludo (o el hint del modo) ya puesto. Si falla, se usa
+# el tema original.
+theme="$dir/rolight.rasi"
+gen="$cache/theme.rasi"
+if ROLIGHT_MODE= python3 "$dir/core.py" --theme "$gen" 2>/dev/null && [ -s "$gen" ]; then
+    theme="$gen"
+fi
+
 # -pid propio: sin esto rolight pelea con el lock de instancia única
 # ($XDG_RUNTIME_DIR/rofi.pid) y le manda toggle a cualquier otro rofi abierto
 # (drun, finder…) en vez de abrirse. Con pidfile propio, rofi hace el toggle
@@ -53,4 +62,4 @@ xdotool getactivewindow > "$cache/active.win" 2>/dev/null || true
 exec rofi -show rolight \
     -pid "$pidfile" \
     -modi "rolight:$dir/core.py" \
-    -theme "$dir/rolight.rasi"
+    -theme "$theme"

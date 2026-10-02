@@ -84,6 +84,48 @@ def greeting():
     return f"{saludo}, {USER_NAME}…" if USER_NAME else f"{saludo}…"
 
 
+# Texto de la caja de búsqueda, por modo. El saludo va en el home.
+PLACEHOLDERS = {
+    "": "",
+    "clipboard": "Buscar en el portapapeles",
+    "bluetooth": "Dispositivo bluetooth",
+    "wifi": "Nombre de la red",
+    "vpn": "VPN de nmcli, o Tailscale",
+    "bitwarden": "Buscar en Bitwarden",
+    "sesiones": "Buscar sesión de Claude, OpenCode o Hermes",
+    "sistema": "Filtrar procesos…",
+}
+
+
+def placeholder_for(mode=""):
+    """Texto de la caja de búsqueda para el modo dado."""
+    return PLACEHOLDERS.get(mode) or greeting()
+
+
+def write_theme(dest):
+    """Copia rolight.rasi con el placeholder del modo.
+
+    rofi no deja cambiar el placeholder desde script mode (`opt("placeholder",
+    …)` lo pisa el tema, y `-theme-append` también), así que hay que generar el
+    tema. Se reescribe la línea `placeholder:` de la entrada.
+    """
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rolight.rasi")
+    try:
+        with open(src, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return False
+    value = placeholder_for(os.environ.get("ROLIGHT_MODE", "")).replace("\\", "\\\\").replace('"', '\\"')
+    text, n = re.subn(r'(?m)^(\s*)placeholder\s*:.*$',
+                      lambda m: f'{m.group(1)}placeholder: "{value}";', text, count=1)
+    if not n:
+        return False
+    os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+    with open(dest, "w", encoding="utf-8") as f:
+        f.write(text)
+    return True
+
+
 # ── Salida rofi ──────────────────────────────────────────────────────
 def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -1225,8 +1267,43 @@ POWER = [
 ]
 
 
+# Vistas rápidas de la pantalla de inicio: (rótulo, info, ícono, subtítulo,
+# palabras clave). Las palabras clave son las que matchea el filtro de rofi, así
+# que van amplia: "cpu" tiene que encontrar el sistema, no solo cpu-x.
+HOME_VIEWS = (
+    ("Sistema", "sys:", "utilities-system-monitor", "cpu ram disco · i",
+     "cpu procesador ram memoria disco temperatura calor proceso sistema stats "
+     "bateria swap"),
+    ("Portapapeles", "clip-home:", "edit-paste", "historial · c",
+     "clipboard copiar pegar portapapeles clipboard"),
+    ("Sesiones IA", "sessions-home:", "dialog-information", "retomar · e",
+     "sesion claude opencode hermes charla sesion ia continuar"),
+    ("Wi-Fi", "wifi-home:", "network-wireless", "redes · w",
+     "wifi wi-fi inalambrico red internet"),
+    ("VPN", "vpn-home:", "network-vpn", "perfiles · v",
+     "vpn wireguard openvpn tailscale tailnet"),
+    ("Bluetooth", "bt-home:", "bluetooth", "conectar · b",
+     "bluetooth bt auricular headphone"),
+    ("Bitwarden", "bw-home:", "dialog-password", "bóveda · k",
+     "bitwarden clave password contrasena bovedа"),
+)
+
+
+# Palabras que muestran los datos del sistema directo, sin lista ni Enter: el
+# mismo criterio que STAT_WORDS en la versión GTK. Se chequean mientras se
+# escribe (rofi vuelve a llamar al script en cada tecla con el texto en argv[1]).
+STAT_WORDS = ("cpu", "mem", "memoria", "ram", "temp", "temperatura", "disco", "disk",
+              "bateria", "batería", "battery", "sistema", "stats", "procesos", "proc",
+              "ventilador", "fan", "swap", "carga")
+
+
 def show_home():
-    header(f"<span alpha='65%'>{esc(greeting())}</span>" if greeting() else None)
+    header()  # el saludo va en el placeholder, no acá (salía duplicado)
+    # Las vistas de herramientas van PRIMERO. Si fueran al final, escribir "cpu"
+    # las dejaba debajo de cpu-x y de las demás apps que matchean, y con 8
+    # líneas visibles nunca llegabas a verlas.
+    for label, info, icon, sub, kw in HOME_VIEWS:
+        row(label, info, icon, sub, kw)
     hist = load_history()
     apps = list_apps()
     apps.sort(key=lambda a: (-hist.get("app:" + a[1], 0), a[0].lower()))
@@ -1244,20 +1321,24 @@ def show_home():
         "rdp vnc escritorio remoto")
     for title, act, icon, kw in POWER:
         row(title, f"power:{act}", icon, "sistema", kw)
-    # Modos por prefijo: letra + espacio (o la letra sola). Se listan acá para
-    # que sean descubribles sin leer el README.
-    for label, info, icon, sub, kw in (
-        ("Portapapeles", "clip-home:", "edit-paste", "historial · c", "clipboard copiar pegar portapapeles"),
-        ("Bluetooth", "bt-home:", "bluetooth", "conectar · b", "bluetooth btPairing"),
-        ("Wi-Fi", "wifi-home:", "network-wireless", "redes · w", "wifi inalambrico red"),
-        ("VPN", "vpn-home:", "network-vpn", "perfiles · v", "vpn wireguard openvpn"),
-        ("Bitwarden", "bw-home:", "dialog-password", "bóveda · k", "bitwarden clave password"),
-        ("Sesiones IA", "sessions-home:", "dialog-information", "retomar · e",
-         "sesion claude opencode hermes charla sesion ia"),
-        ("Sistema", "sys:", "utilities-system-monitor", "cpu ram disco · i",
-         "cpu memoria ram disco temperatura proceso sistema"),
-    ):
-        row(label, info, icon, sub, kw)
+
+
+def show_apps_like(q, limit=8):
+    """Filas de las apps que matchean la búsqueda, para el fallback de texto libre.
+
+    Sin esto, escribir "firefox" caía en el menú "¿Qué hago con…?" y no había
+    forma de llegar a una app por el nombre sin pasar por la lista vacía.
+    """
+    q = q.strip().lower()
+    if not q:
+        return []
+    hist = load_history()
+    hits = []
+    for name, did, path, icon, sub, kw in list_apps():
+        if q in name.lower() or q in (kw or "").lower():
+            hits.append((-hist.get("app:" + did, 0), name.lower(), name, did, path, icon, sub))
+    hits.sort()
+    return hits[:limit]
 
 
 def show_query(t):
@@ -1329,7 +1410,10 @@ def show_query(t):
         row(f"= {res}", f"copy:{res}", "accessories-calculator", "Enter copia el resultado")
         row(f"Preguntar a la IA: {t}", f"ai:{t}", "help-about")
         return
-    header(f"¿Qué hago con «{esc(t)}»?")
+    apps = show_apps_like(t)
+    header(f"¿Qué hago con «{esc(t)}»?" if not apps else None)
+    for _, _, name, did, path, icon, sub in apps:
+        row(name, f"app:{did}|{path}", icon, sub)
     row(f"Buscar en la web: {t}", f"web:{t}", "web-browser")
     row(f"Preguntar a la IA: {t}", f"ai:{t}", "help-about")
     row(f"Buscar archivos: {t}", f"files:{t}", "system-file-manager")
@@ -1557,10 +1641,22 @@ def initial_view():
 
 
 def main():
+    # `--theme DEST`: generar el tema con el placeholder del modo. Lo usa el
+    # launcher, no rofi.
+    if len(sys.argv) > 2 and sys.argv[1] == "--theme":
+        return 0 if write_theme(sys.argv[2]) else 1
+
     retv = int(os.environ.get("ROFI_RETV", "0"))
     arg = sys.argv[1] if len(sys.argv) > 1 else ""
     info = os.environ.get("ROFI_INFO", "")
     if retv == 0:
+        # rofi re-llama al script en cada tecla y pasa el texto en argv[1]. Con
+        # una palabra de sistema mostramos los datos ya, sin lista ni Enter; con
+        # cualquier otra cosa sigue el filtrado normal de la lista.
+        if arg.strip().lower() in STAT_WORDS:
+            return show_system()
+        if arg.strip():
+            return show_query(arg.strip())
         initial_view()()
     elif retv == 1 and info:
         handle_info(info, arg)
