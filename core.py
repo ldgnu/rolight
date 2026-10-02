@@ -1513,12 +1513,34 @@ def handle_info(info, text):
         show_query(text)
 
 
+def initial_view():
+    """Vista de arranque, para abrir directo en un modo (`rolight-rofi b`).
+
+    rofi no deja precargar la caja de texto en script mode, así que el modo se
+    pasa por ROLIGHT_MODE y se aplica solo en el primer pintado (ROFI_RETV=0).
+    A partir de ahí manda lo que el usuario escriba.
+    """
+    mode = os.environ.get("ROLIGHT_MODE", "").strip().lower()
+    return {
+        "c": lambda: show_clipboard(""), "clip": lambda: show_clipboard(""),
+        "b": lambda: show_bluetooth(""), "bt": lambda: show_bluetooth(""),
+        "w": lambda: show_wifi(""), "wifi": lambda: show_wifi(""),
+        "v": lambda: show_vpn(""), "vpn": lambda: show_vpn(""),
+        "k": lambda: show_bw(""), "bw": lambda: show_bw(""),
+        "e": lambda: show_sessions(""), "ses": lambda: show_sessions(""),
+        "i": lambda: show_system(""), "sys": lambda: show_system(""),
+        "sistema": lambda: show_system(""),
+        "clipboard": lambda: show_clipboard(""), "bluetooth": lambda: show_bluetooth(""),
+        "sesiones": lambda: show_sessions(""), "bitwarden": lambda: show_bw(""),
+    }.get(mode, show_home)
+
+
 def main():
     retv = int(os.environ.get("ROFI_RETV", "0"))
     arg = sys.argv[1] if len(sys.argv) > 1 else ""
     info = os.environ.get("ROFI_INFO", "")
     if retv == 0:
-        show_home()
+        initial_view()()
     elif retv == 1 and info:
         handle_info(info, arg)
     elif arg.strip():

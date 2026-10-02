@@ -8,13 +8,39 @@ mkdir -p "$cache"
 # Toggle por pidfile: `pkill -x rofi` mataría también el drun, el finder y
 # cualquier otro rofi del usuario, y `pkill -f` puede matar al propio shell que
 # invoca este script (el patrón aparece en su cmdline).
+#
+# Se verifica que el PID siga siendo *nuestro* rofi, no solo que esté vivo: el
+# kernel reusa PIDs y `kill -0` solo no alcanza. Sin esta comprobación, un PID
+# recycled hacía que el toggle matara un proceso ajeno en vez de cerrar rolight.
 if [ -r "$pidfile" ]; then
     pid="$(cat "$pidfile" 2>/dev/null)"
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null &&
+       tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q -- "-show rolight"; then
         kill "$pid" 2>/dev/null
         exit 0
     fi
+    rm -f "$pidfile"
 fi
+
+# Modo directo: `rolight-rofi bt` abre ya en Bluetooth, sin escribir la letra.
+# rofi no deja precargar la caja en script mode, así que se pasa por ROLIGHT_MODE
+# y core.py lo aplica en el primer pintado.
+mode="${1:-}"
+case "$mode" in
+    ""|all|home) unset ROLIGHT_MODE ;;
+    c|clip|clipboard)    export ROLIGHT_MODE=clipboard ;;
+    b|bt|bluetooth)      export ROLIGHT_MODE=bluetooth ;;
+    w|wifi|wi-fi)        export ROLIGHT_MODE=wifi ;;
+    v|vpn)               export ROLIGHT_MODE=vpn ;;
+    k|bw|bitwarden)      export ROLIGHT_MODE=bitwarden ;;
+    e|ses|sessions)      export ROLIGHT_MODE=sesiones ;;
+    i|sys|system|stats)  export ROLIGHT_MODE=sistema ;;
+    *)
+        echo "rolight-rofi: modo desconocido «$mode»" >&2
+        echo "  c clipboard · b bluetooth · w wifi · v vpn · k bitwarden · e sesiones · i sistema" >&2
+        exit 2
+        ;;
+esac
 
 # Guardamos la ventana activa para poder "pegar en la ventana activa" desde
 # el historial del portapapeles (rofi le roba el foco al abrirse).
