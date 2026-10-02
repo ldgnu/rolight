@@ -1271,21 +1271,21 @@ POWER = [
 # palabras clave). Las palabras clave son las que matchea el filtro de rofi, así
 # que van amplia: "cpu" tiene que encontrar el sistema, no solo cpu-x.
 HOME_VIEWS = (
-    ("Sistema", "sys:", "utilities-system-monitor", "cpu ram disco · i",
+    ("Sistema", "sys:", "utilities-system-monitor", "",
      "cpu procesador ram memoria disco temperatura calor proceso sistema stats "
      "bateria swap"),
-    ("Portapapeles", "clip-home:", "edit-paste", "historial · c",
+    ("Portapapeles", "clip-home:", "edit-paste", "",
      "clipboard copiar pegar portapapeles clipboard"),
-    ("Sesiones IA", "sessions-home:", "dialog-information", "retomar · e",
+    ("Sesiones IA", "sessions-home:", "dialog-information", "",
      "sesion claude opencode hermes charla sesion ia continuar"),
-    ("Wi-Fi", "wifi-home:", "network-wireless", "redes · w",
+    ("Wi-Fi", "wifi-home:", "network-wireless", "",
      "wifi wi-fi inalambrico red internet"),
-    ("VPN", "vpn-home:", "network-vpn", "perfiles · v",
+    ("VPN", "vpn-home:", "network-vpn", "",
      "vpn wireguard openvpn tailscale tailnet"),
-    ("Bluetooth", "bt-home:", "bluetooth", "conectar · b",
+    ("Bluetooth", "bt-home:", "bluetooth", "",
      "bluetooth bt auricular headphone"),
-    ("Bitwarden", "bw-home:", "dialog-password", "bóveda · k",
-     "bitwarden clave password contrasena bovedа"),
+    ("Bitwarden", "bw-home:", "dialog-password", "",
+     "bitwarden clave password contrasena boveda"),
 )
 
 
@@ -1309,18 +1309,16 @@ def show_home():
     apps.sort(key=lambda a: (-hist.get("app:" + a[1], 0), a[0].lower()))
     for name, did, path, icon, sub, kw in apps:
         row(name, f"app:{did}|{path}", icon, sub, kw)
-    row("Clima", "weather:", "weather-few-clouds", "pronóstico actual", "clima weather tiempo")
-    row("Hora", "time:", "preferences-system-time", "fecha y hora", "hora reloj time fecha")
-    row("Calculadora", "hint:calc", "accessories-calculator", "escribí una cuenta, ej. 12*3+4",
-        "calc calculadora sumar restar")
+    row("Clima", "weather:", "weather-few-clouds", "", "clima weather tiempo")
+    row("Hora", "time:", "preferences-system-time", "", "hora reloj time fecha")
+    row("Calculadora", "hint:calc", "accessories-calculator", "", "calc calculadora sumar restar")
     for h in ssh_hosts():
-        row(f"SSH {h}", f"ssh:{h}", "utilities-terminal", "conectar por ssh", "ssh servidor")
+        row(f"SSH {h}", f"ssh:{h}", "utilities-terminal", "", "ssh servidor")
     for name, proto, server, path, _group in remmina_profiles():
-        row(name, f"rdp:{path}", "org.remmina.Remmina", f"{proto} {server}", "remmina rdp vnc")
-    row("Remmina", "app-remmina", "org.remmina.Remmina", "nueva conexión remota",
-        "rdp vnc escritorio remoto")
+        row(name, f"rdp:{path}", "org.remmina.Remmina", "", "remmina rdp vnc")
+    row("Remmina", "app-remmina", "org.remmina.Remmina", "", "rdp vnc escritorio remoto")
     for title, act, icon, kw in POWER:
-        row(title, f"power:{act}", icon, "sistema", kw)
+        row(title, f"power:{act}", icon, "", kw)
 
 
 def show_apps_like(q, limit=8):
