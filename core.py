@@ -69,7 +69,7 @@ USER_NAME = "Javi"
 GREETINGS = {
     "mañana": ("Buenos días", "Buen día", "Hola", "Qué onda", "Bárbaro", "Mirá vos"),
     "tarde": ("Buenas tardes", "Hola", "Qué onda", "Bárbaro", "Todo bien por acá"),
-    "noche": ("Buenas noches", "Hola", "Qué onda", "Bárbaro", "¿Ronda noche?"),
+    "noche": ("Buenas noches", "Hola", "Qué onda", "Bárbaro", "¿Cómo andás?"),
 }
 
 
@@ -1381,13 +1381,16 @@ def find_exact_app(q):
     return None
 
 
-def auto_launch(_name, did, path, _icon=None):
-    """Lanza la app y deja una fila de confirmación. Devuelve True si lanzó."""
-    # Evita relanzar por backspace o por reescribir lo mismo enseguida.
-    guard = os.path.join(CACHE, "autolaunch")
+def auto_launch(name, did, path, _icon=None):
+    """Lanza la app. Devuelve True si arrancó.
+
+    El freno va POR APP, con el nombre en el nombre del archivo: con uno global,
+    lanzar dos apps seguidas hacía que la segunda se comiera el bloqueo y no
+    abriera, y parecía que el auto-lanzamiento no funcionaba.
+    """
+    guard = os.path.join(CACHE, f"autolaunch.{did}")
     try:
-        last = time.time() - os.path.getmtime(guard)
-        if last < AUTO_LAUNCH_GUARD:
+        if time.time() - os.path.getmtime(guard) < AUTO_LAUNCH_GUARD:
             return False
     except OSError:
         pass
