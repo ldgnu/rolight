@@ -7,12 +7,14 @@ Queda residente: la primera vez arranca, las siguientes solo muestra/oculta
 Modos (letra + espacio, o Alt+letra; Backspace con la búsqueda vacía sale).
 Escribí «?» para ver la lista de atajos.
 """
+import glob
 import json
 import os
 import re
 import subprocess
 import sys
 import threading
+import time
 import urllib.parse
 from shutil import which as shutil_which
 
@@ -25,8 +27,9 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, GtkLayerShell, Pango  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-# sway no siempre exporta ~/.local/bin (claude, kitty, wtype, fd viven ahí)
+# sway no siempre exporta ~/.local/bin (opencode, claude, kitty, wtype, fd viven ahí)
 os.environ["PATH"] = os.pathsep.join([os.path.expanduser("~/.local/bin"), os.path.expanduser("~/.cargo/bin"),
+                                      os.path.expanduser("~/.opencode/bin"),
                                       os.environ.get("PATH", "")])
 import core  # noqa: E402
 
@@ -41,6 +44,7 @@ MODES = [
     ("f", "files", "Archivos", "system-file-manager"),
     ("g", "web", "Web", "web-browser"),
     ("a", "ai", "IA", "help-about"),
+    ("e", "sessions", "Sesiones IA", "document-open-recent"),
     ("=", "calc", "Calcular", "accessories-calculator"),
     ("s", "ssh", "SSH", "utilities-terminal"),
     ("r", "rdp", "Remoto", "org.remmina.Remmina"),
@@ -116,7 +120,7 @@ ACTIONS = [
 MODE_BY_KEY = {m[0]: m for m in MODES}
 MODE_BY_ID = {m[1]: m for m in MODES}
 WORD_MODES = {"clima": "weather", "tiempo": "weather", "hora": "time", "ssh": "ssh",
-              "rdp": "rdp", "vnc": "rdp", "ia": "ai", "web": "web", "calc": "calc",
+              "rdp": "rdp", "vnc": "rdp", "ia": "ai", "sesiones": "sessions", "web": "web", "calc": "calc",
               "vpn": "vpn", "wireguard": "vpn", "wifi": "wifi", "bt": "bt",
               "bluetooth": "bt", "monitor": "monitor", "monitores": "monitor"}
 # palabras que, escritas en la búsqueda general, sugieren entrar al modo
@@ -125,7 +129,8 @@ MODE_HINTS = {"clip": "portapapeles clipboard copiar", "files": "archivos files"
               "bt": "bluetooth auriculares mouse", "monitor": "monitores pantallas displays kanshi",
               "weather": "clima tiempo", "power": "energia apagar reiniciar",
               "ssh": "ssh servidor", "rdp": "rdp remmina escritorio remoto",
-              "bw": "bitwarden contraseñas password claves usuario"}
+              "bw": "bitwarden contraseñas password claves usuario",
+              "sessions": "sesiones claude opencode hermes agentes retomar"}
 KANSHI_CONFIG = os.path.expanduser("~/.config/kanshi/config")
 MONITOR_SCRIPTS = os.path.expanduser("~/.config/sway/scripts")
 
@@ -280,6 +285,71 @@ def vpn_profiles():
         if parts[2] == "yes":
             active.append(parts[0])
     return names, active
+
+
+def _ago(ts):
+    secs = max(0, int(time.time() - ts))
+    for unit, n in (("d", 86400), ("h", 3600), ("min", 60)):
+        if secs >= n:
+            return f"hace {secs // n} {unit}"
+    return "recién"
+
+
+def _claude_sessions(limit=40):
+    out = []
+    files = glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl"))
+    for path in sorted(files, key=os.path.getmtime, reverse=True)[:limit]:
+        try:
+            with open(path, "rb") as f:
+                data = f.read(30_000_000)
+        except OSError:
+            continue
+        titles = re.findall(rb'"(?:customTitle|aiTitle|summary)":"((?:[^"\\]|\\.)*)"', data)
+        cwd = re.search(rb'"cwd":"((?:[^"\\]|\\.)*)"', data)
+        if not titles and not cwd:
+            continue
+        title = json.loads(b'"' + titles[-1] + b'"') if titles else ""
+        out.append(("Claude", title or "(sin título)", json.loads(b'"' + cwd.group(1) + b'"') if cwd else "",
+                    os.path.getmtime(path), ["claude", "--resume", os.path.basename(path)[:-6]]))
+    return out
+
+
+def _sqlite_rows(path, sql):
+    import sqlite3
+    if not os.path.exists(path):
+        return []
+    db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
+    try:
+        return db.execute(sql).fetchall()
+    finally:
+        db.close()
+
+
+def _opencode_sessions(limit=40):
+    rows = _sqlite_rows(os.path.expanduser("~/.local/share/opencode/opencode.db"),
+                        "SELECT id, title, directory, time_updated FROM session WHERE parent_id IS NULL "
+                        f"AND time_archived IS NULL ORDER BY time_updated DESC LIMIT {limit}")
+    return [("OpenCode", t or "(sin título)", d or "", u / 1000, ["opencode", "-s", i]) for i, t, d, u in rows]
+
+
+def _hermes_sessions(limit=40):
+    rows = _sqlite_rows(os.path.expanduser("~/.hermes/state.db"),
+                        "SELECT id, title, cwd, COALESCE(ended_at, started_at) FROM sessions "
+                        "WHERE parent_session_id IS NULL AND COALESCE(archived, 0) = 0 AND source != 'subagent' "
+                        f"ORDER BY started_at DESC LIMIT {limit}")
+    return [("Hermes", t or "(sin título)", d or "", u or 0, ["hermes", "--resume", i]) for i, t, d, u in rows]
+
+
+def ai_sessions():
+    """Sesiones recientes de Claude Code, OpenCode y Hermes: (herramienta, título, carpeta, ts, cmd)."""
+    out = []
+    for tool, fn in (("claude", _claude_sessions), ("opencode", _opencode_sessions), ("hermes", _hermes_sessions)):
+        if shutil_which(tool):
+            try:
+                out += fn()
+            except Exception as e:  # noqa: BLE001
+                print(f"sesiones {tool}: {e}", file=sys.stderr)
+    return sorted(out, key=lambda r: r[3], reverse=True)[:150]
 
 
 def kanshi_profiles():
@@ -551,6 +621,8 @@ class Rolight:
         self._stats_timer = None
         self.pix_cache = {}
         self.ai_answer = ""
+        self.ai_session = None
+        self.sessions_list = []
         self.confirm = None
         self._mute = False
         self._timer = None
@@ -917,10 +989,10 @@ class Rolight:
             "clip": "Buscar en el portapapeles (img = solo imágenes)",
             "ssh": "Servidor o user@host", "rdp": "Equipo o perfil de Remmina",
             "files": "Nombre de archivo o carpeta", "web": "Buscar en Google o URL",
-            "ai": "Preguntale algo a Claude y ↵", "calc": "Ej. 12*3+4, 2^10, 15% de 200",
+            "ai": f"Preguntale algo a {core.ai_name()} y ↵", "calc": "Ej. 12*3+4, 2^10, 15% de 200",
             "weather": "Ciudad (vacío = donde estás)", "time": "Ciudad (vacío = acá)",
             "power": "Bloquear, suspender, reiniciar…",
-            "vpn": "Nombre de la VPN", "wifi": "Nombre de la red",
+            "vpn": "Nombre de la VPN", "sessions": "Buscar sesión de Claude, OpenCode o Hermes", "wifi": "Nombre de la red",
             "bt": "Dispositivo bluetooth", "monitor": "Perfil de monitores",
             "actions": "Teclado, captura, volumen, wallpaper, tema…",
             "bw": "Buscar en Bitwarden",
@@ -1033,7 +1105,7 @@ class Rolight:
     def fallback_items(self, q):
         return [
             Item(f"Buscar «{q}» en la web", "Google", "web-browser", lambda: self._web(q), "Más"),
-            Item(f"Preguntar a la IA: {q}", "Claude · ↵ responde acá · Ctrl+↵ terminal",
+            Item(f"Preguntar a la IA: {q}", f"{core.ai_name()} · ↵ responde acá · Ctrl+↵ terminal",
                  "help-about", lambda: self._ask_inline(q), "Más",
                  alt=lambda: core.ask_ai(q)),
         ]
@@ -1193,12 +1265,13 @@ class Rolight:
             ans = self.ai_answer
             return self.render([
                 Item("Copiar respuesta", "", "edit-copy", lambda: core.copy(ans)),
-                Item("Seguir la charla en terminal", "claude", "utilities-terminal", lambda: core.ask_ai(q)),
+                Item("Seguir la charla en terminal", core.ai_name(), "utilities-terminal",
+                     lambda s=self.ai_session: core.ask_ai(q, s)),
             ], f"<span size='small'>{GLib.markup_escape_text(ans)}</span>",
                 "↵ elegir · escribí para preguntar otra cosa · Esc cerrar")
         if not q:
             return self.render([])
-        self.render([Item(f"Preguntar: {q}", "↵ responde acá · Ctrl+↵ abre claude en terminal",
+        self.render([Item(f"Preguntar: {q}", f"↵ responde acá · Ctrl+↵ abre {core.ai_name()} en terminal",
                           "help-about", lambda: self._ask_inline(q), alt=lambda: core.ask_ai(q))])
 
     def _ask_inline(self, q):
@@ -1208,13 +1281,29 @@ class Rolight:
         gen = self.gen
 
         def ask():
-            r = subprocess.run(core.AI_CMD + ["-p", q, "--append-system-prompt", AI_SYSTEM],
-                               capture_output=True, text=True, timeout=120,
-                               cwd=os.path.expanduser("~"))
-            return (r.stdout or r.stderr).strip()
+            home = os.path.expanduser("~")
+            if core.AI_BACKEND == "opencode":
+                r = subprocess.run(["opencode", "run", "--format", "json", f"{AI_SYSTEM}\n\n{q}"],
+                                   capture_output=True, text=True, timeout=180, cwd=home)
+                parts, sid = [], None
+                for line in r.stdout.splitlines():
+                    try:
+                        ev = json.loads(line)
+                    except ValueError:
+                        continue
+                    sid = ev.get("sessionID") or sid
+                    if ev.get("type") == "text":
+                        parts.append(ev.get("part", {}).get("text", ""))
+                return "".join(parts).strip() or r.stderr.strip(), sid
+            r = subprocess.run(["claude", "-p", q, "--append-system-prompt", AI_SYSTEM],
+                               capture_output=True, text=True, timeout=120, cwd=home)
+            return (r.stdout or r.stderr).strip(), None
 
         def done(res):
-            self.ai_answer = str(res) if not isinstance(res, Exception) else f"Error: {res}"
+            if isinstance(res, Exception):
+                self.ai_answer, self.ai_session = f"Error: {res}", None
+            else:
+                self.ai_answer, self.ai_session = res
             self.mode_ai(q)
         run_bg(ask, self.deliver(gen, done))
         return False
@@ -1494,6 +1583,29 @@ class Rolight:
             ]
             self.render(items, None, "↵ conectar/desconectar · ⌫ salir")
         self.async_mode("bt", bt_devices, show, "Leyendo dispositivos…")
+
+    def mode_sessions(self, q):
+        def show(res):
+            if isinstance(res, Exception):
+                return self.render([], f"Error leyendo sesiones: {GLib.markup_escape_text(str(res))}")
+            if not res:
+                return self.render([], "No encontré sesiones de Claude Code, OpenCode ni Hermes")
+            words = q.lower().split()
+            items = []
+            home = os.path.expanduser("~")
+            for tool, title, cwd, ts, cmd in res:
+                where = cwd.replace(home, "~", 1) if cwd else ""
+                if words and not all(w in f"{tool} {title} {where}".lower() for w in words):
+                    continue
+                run = ["sh", "-c", 'cd "$0" 2>/dev/null; exec "$@"', cwd or home] + cmd
+                items.append(Item(title, f"{tool}  ·  {where}  ·  {_ago(ts)}" if where else f"{tool}  ·  {_ago(ts)}",
+                                  "utilities-terminal",
+                                  lambda r=run, t=title: core.spawn(core.TERMINAL + ["--title", t[:60]] + r),
+                                  "Recientes"))
+                if len(items) >= 60:
+                    break
+            self.render(items, None, "↵ retomar en terminal · escribí para filtrar (claude, opencode, hermes…) · ⌫ salir")
+        self.async_mode("sessions", ai_sessions, show, "Buscando sesiones…")
 
     def mode_vpn(self, q):
         def show(res):

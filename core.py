@@ -5,7 +5,7 @@ Escribí y Enter. Si lo que escribiste no coincide con nada (o usás Ctrl+Enter)
 se interpreta como consulta:
 
   2+2*3 / =sqrt(16)     calculadora (Enter copia el resultado)
-  ?pregunta / ia ...    pregunta a la IA (versión rofi) (claude en una terminal flotante)
+  ?pregunta / ia ...    pregunta a la IA (versión rofi) (en una terminal flotante)
   g texto               busca en la web
   f texto / /texto      busca archivos en $HOME
   ssh host / rdp host   conecta por ssh (kitty) o rdp (remmina)
@@ -33,7 +33,7 @@ from zoneinfo import ZoneInfo, available_timezones
 # ── Ajustes ──────────────────────────────────────────────────────────
 WEB_SEARCH = "https://www.google.com/search?q={}"
 TERMINAL = ["kitty"]
-AI_CMD = ["claude"]                      # se le pasa la pregunta como argumento
+AI_BACKEND = "opencode"                  # "opencode" o "claude"
 WEATHER_CITY = ""                        # vacío = detecta por IP
 FILE_SEARCH_ROOT = os.path.expanduser("~")
 MAX_FILES = 40
@@ -507,8 +507,19 @@ def do_power(act):
     spawn(cmds[act])
 
 
-def ask_ai(q):
-    spawn(TERMINAL + ["--class", "rolight-ai", "--title", "Rolight · IA"] + AI_CMD + [q])
+def ai_name():
+    return "OpenCode" if AI_BACKEND == "opencode" else "Claude"
+
+
+def ai_terminal_cmd(q="", session=None):
+    """Comando para seguir la charla con la IA en una terminal."""
+    if AI_BACKEND == "opencode":
+        return ["opencode"] + (["-s", session] if session else []) + (["--prompt", q] if q and not session else [])
+    return ["claude"] + (["--resume", session] if session else []) + ([q] if q and not session else [])
+
+
+def ask_ai(q, session=None):
+    spawn(TERMINAL + ["--class", "rolight-ai", "--title", "Rolight · IA"] + ai_terminal_cmd(q, session))
 
 
 def handle_info(info, text):

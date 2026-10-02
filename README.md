@@ -22,7 +22,7 @@ todo desde una sola caja y sin sacar las manos del teclado.
 - **Instantáneo.** Queda residente y se muestra/oculta por D-Bus: no hay arranque en frío cada vez que lo abrís.
 - **Liviano.** Python + GTK3, sin Electron ni servicios extra. Los modos pesados (clima, Wi-Fi, archivos)
   corren en segundo plano y nunca congelan la interfaz.
-- **Todo en un lugar.** 17 modos con atajo de una letra. Escribís y los resultados se actualizan al vuelo.
+- **Todo en un lugar.** 18 modos con atajo de una letra. Escribís y los resultados se actualizan al vuelo.
 - **Sin compilar.** Son scripts: cloná, instalá las dependencias y listo.
 
 ## Capturas
@@ -50,7 +50,8 @@ Escribí la letra + espacio (o `Alt+letra`). Con la búsqueda vacía, `Backspace
 | `c` | Portapapeles | Historial con vista previa; copiar o pegar directo | `copyq`, `wtype` |
 | `f` | Archivos | Búsqueda rápida en `$HOME` | `fd` |
 | `g` | Web | Busca en el navegador; también abre URLs | — |
-| `a` | IA | Pregunta a la IA y responde ahí mismo | `claude` CLI |
+| `a` | IA | Pregunta a la IA y responde ahí mismo; Ctrl+↵ sigue la charla en terminal | `opencode` o `claude` |
+| `e` | Sesiones IA | Lista y retoma sesiones de Claude Code, OpenCode y Hermes en su carpeta | cualquiera de los tres |
 | `=` | Calcular | Calculadora segura | — |
 | `s` | SSH | Hosts de `~/.ssh/config` y `known_hosts` | `kitty` |
 | `r` | Remoto | Perfiles de escritorio remoto | `remmina` |
@@ -257,7 +258,8 @@ Cualquier compositor con `wlr-layer-shell` sirve.
 
 | Qué | Dónde |
 |---|---|
-| Terminal, buscador web, comando de IA, ciudad del clima | arriba de todo en `core.py` |
+| Terminal, buscador web, ciudad del clima | arriba de todo en `core.py` |
+| IA: `opencode` o `claude` | `AI_BACKEND` en `core.py` |
 | Acciones rápidas (modo `x`) | lista `ACTIONS` en `rolight.py` |
 | Colores, tamaños y fuentes | bloque `CSS` en `rolight.py` |
 | Ancho del panel | `WIDTH` en `rolight.py` |
