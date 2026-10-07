@@ -14,6 +14,7 @@ También se usa desde la terminal o atajos de sway:
 """
 import datetime
 import glob
+import http.client
 import json
 import os
 import socket
@@ -28,7 +29,9 @@ CONF = os.path.expanduser("~/.config/minitone")
 CACHE = os.path.expanduser("~/.cache/rolight")
 STATE = os.path.join(CACHE, "music.json")
 SOCK = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or CACHE, "rolight-mpv.sock")
-RB_HOSTS = ("de1", "nl1", "at1")  # los mismos espejos de Radio Browser que usa minitone
+# espejos de Radio Browser; nl1 y at1 (los de minitone) dejaron de responder en 2026-10.
+# "all" es el round-robin DNS oficial: si un espejo muere, sigue andando.
+RB_HOSTS = ("de1", "de2", "all")
 UA = "rolight/1.0 (minitone)"
 
 
@@ -127,8 +130,11 @@ def ensure_player():
     except OSError:
         pass
     vol = str(_load(STATE, {}).get("volume") or config().get("volume", 70))
-    subprocess.Popen(["mpv", "--no-video", "--no-terminal", "--idle=yes", "--keep-open=no",
-                      f"--input-ipc-server={SOCK}", f"--volume={vol}", "--title=rolight-music"],
+    args = ["mpv", "--no-video", "--no-terminal", "--idle=yes", "--keep-open=no",
+            f"--input-ipc-server={SOCK}", f"--volume={vol}", "--title=rolight-music"]
+    if ipv4_ok():
+        args.append("--ytdl-raw-options-append=force-ipv4=")  # el yt-dlp de mpv, ver «red: IPv4 primero»
+    subprocess.Popen(args,
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)
     for _ in range(40):
@@ -138,10 +144,66 @@ def ensure_player():
     raise RuntimeError("mpv no arrancó")
 
 
+# ── red: IPv4 primero ────────────────────────────────────────────────
+# Con un IPv6 roto (router que anuncia ruta pero no llega a internet) urllib y yt-dlp
+# prueban primero la dirección IPv6 y se quedan colgados hasta el timeout: las búsquedas
+# tardaban 15 s (radios) o no volvían nunca (YouTube). Los navegadores no lo notan porque
+# prueban IPv4 e IPv6 en paralelo. Si hay ruta IPv4, se usa primero; si no, IPv6 como siempre.
+_V4 = None
+
+
+def ipv4_ok():
+    """¿Hay ruta IPv4 a internet? (connect de UDP no manda paquetes)."""
+    global _V4
+    if _V4 is None:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("1.1.1.1", 53))
+            _V4 = True
+        except OSError:
+            _V4 = False
+    return _V4
+
+
+def _connect_v4_first(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None, **_kw):
+    host, port = address
+    infos = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+    if ipv4_ok():
+        infos.sort(key=lambda i: i[0] != socket.AF_INET)
+    err = None
+    for family, kind, proto, _canon, addr in infos:
+        sock = socket.socket(family, kind, proto)
+        try:
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(addr)
+            return sock
+        except OSError as e:
+            err = e
+            sock.close()
+    raise err or OSError(f"no se pudo conectar a {host}")
+
+
+class _HTTPSv4(http.client.HTTPSConnection):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self._create_connection = _connect_v4_first
+
+
+class _HandlerV4(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_HTTPSv4, req, context=self._context)
+
+
+_opener = urllib.request.build_opener(_HandlerV4())
+
+
 # ── fuentes (mismo formato de canción que minitone) ──────────────────
 def _get(url, timeout=6):
     req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with _opener.open(req, timeout=timeout) as r:
         return json.load(r)
 
 
@@ -190,7 +252,10 @@ def search_radio(q, limit=30):
 def search_youtube(q, limit=12):
     if not which("yt-dlp"):
         raise RuntimeError("yt-dlp no está instalado")
-    out = subprocess.run(["yt-dlp", "--flat-playlist", "-j", "--no-warnings", f"ytsearch{limit}:{q}"],
+    cmd = ["yt-dlp", "--flat-playlist", "-j", "--no-warnings", "--no-update"]
+    if ipv4_ok():
+        cmd.append("--force-ipv4")  # ver «red: IPv4 primero»
+    out = subprocess.run(cmd + [f"ytsearch{limit}:{q}"],
                          capture_output=True, text=True, timeout=25).stdout
     songs = []
     for line in out.splitlines():
