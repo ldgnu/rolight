@@ -369,6 +369,11 @@ def kanshi_profiles():
     return out
 
 
+def kanshi_transform(t):
+    """Pasa una rotación entre el sentido de kanshi y el de sway (90 ↔ 270, simétrico)."""
+    return re.sub(r"(flipped-)?\b(90|270)\b", lambda m: f"{m[1] or ''}{'270' if m[2] == '90' else '90'}", t)
+
+
 def apply_kanshi(outputs):
     """Aplica las líneas `output ...` de un perfil kanshi con swaymsg."""
     connected = {o["name"] for o in json.loads(sh(["swaymsg", "-t", "get_outputs"], 3))}
@@ -382,8 +387,7 @@ def apply_kanshi(outputs):
         args = re.sub(r"position\s+(-?\d+),(-?\d+)", r"position \1 \2", args)
         # kanshi usa el sentido de wl_output (antihorario) y swaymsg el horario:
         # el 270 de kanshi es el 90 de sway y viceversa
-        args = re.sub(r"transform\s+(flipped-)?(90|270)\b",
-                      lambda m: f"transform {m[1] or ''}{'270' if m[2] == '90' else '90'}", args)
+        args = re.sub(r"transform\s+(\S+)", lambda m: f"transform {kanshi_transform(m[1])}", args)
         cmds.append(f"output {name} {args}")
     for name in connected - listed:
         cmds.append(f"output {name} disable")
@@ -1652,7 +1656,7 @@ class Rolight:
             outs = []
         connected = {o["name"] for o in outs}
         active = ", ".join(f"{o['name']} {o['rect']['width']}×{o['rect']['height']}"
-                           + (f" ↻{o['transform']}" if o.get("transform") not in (None, "normal") else "")
+                           + (f" ↻{kanshi_transform(o['transform'])}" if o.get("transform") not in (None, "normal") else "")
                            for o in outs if o.get("active"))
         ql = q.lower()
         items = []
