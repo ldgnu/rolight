@@ -126,7 +126,7 @@ WORD_MODES = {"clima": "weather", "tiempo": "weather", "hora": "time", "ssh": "s
               "vpn": "vpn", "wireguard": "vpn", "wifi": "wifi", "bt": "bt",
               "bluetooth": "bt", "monitor": "monitor", "monitores": "monitor",
               "music": "music", "musica": "music", "música": "music", "radio": "music",
-              "minitone": "music"}
+              "minitone": "music", "buscar": "files", "archivos": "files", "archivo": "files"}
 # palabras que, escritas en la búsqueda general, sugieren entrar al modo
 MODE_HINTS = {"clip": "portapapeles clipboard copiar", "files": "archivos files",
               "vpn": "vpn wireguard openvpn", "wifi": "wifi red wireless internet",
@@ -1220,7 +1220,7 @@ class Rolight:
             return self.render([Item(name, f"«{key}» + espacio  ·  Alt+{key}", icon,
                                      lambda m=mid: self.set_mode(m) or False, "Atajos", close=False)
                                 for key, mid, name, icon in MODES]
-                               + [Item("Buscar archivos rápido", "«/» + nombre · «/img», «/audio», «/pdf»… por tipo", "system-file-manager",
+                               + [Item("Buscar archivos rápido", "«buscar» o «/» + nombre · «buscar img», «buscar pdf»… por tipo", "system-file-manager",
                                        lambda: self.set_mode("files") or False, "Atajos", close=False)],
                                None, "↵ entrar al modo · Ctrl+↵ alternativa en cada resultado · Esc cerrar")
         card, items = self.calc_card(q)
@@ -1279,7 +1279,7 @@ class Rolight:
 
     def mode_files(self, q):
         filtros = ("<span alpha='60%'>Filtrá por tipo: <b>img</b> · <b>audio</b> · <b>video</b> · "
-                   "<b>doc</b> · <b>pdf</b> · <b>zip</b> · <b>.ext</b>  —  ej. «img logo», «.png fondo»; "
+                   "<b>doc</b> · <b>pdf</b> · <b>zip</b> · <b>.ext</b>  —  ej. «buscar img logo», «buscar .png fondo»; "
                    "solo el tipo muestra los más recientes</span>")
         if len(q) < 2:
             return self.render([], "<span alpha='60%'>Escribí al menos 2 letras…</span>\n" + filtros)

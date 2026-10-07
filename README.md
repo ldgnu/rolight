@@ -259,7 +259,7 @@ escriben en el lanzador letra + espacio y se pulsa Enter.
 | `e algo` | Sesiones IA de Claude Code, OpenCode y Hermes |
 | `i` | Sistema: CPU, RAM, swap, disco, temperaturas, ventiladores |
 | `i p algo` | Procesos, filtrables por nombre (`psutil`) |
-| `f algo` o `/algo` | Archivos (`fd`); filtrá por tipo: `f img logo`, `f audio`, `f .png fondo` |
+| `buscar algo`, `f algo` o `/algo` | Archivos (`fd`); filtrá por tipo: `buscar img logo`, `buscar audio`, `buscar .png fondo` |
 | `g algo` | Web · `ssh host` · `rdp host` · `clima` · `hora en …` |
 
 **Tailscale** (`v`): Tailscale no aparece como perfil VPN en NetworkManager
