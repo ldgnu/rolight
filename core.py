@@ -408,11 +408,68 @@ def time_message(city=""):
 
 
 # ── Archivos ─────────────────────────────────────────────────────────
+# Filtros por tipo para la búsqueda de archivos: «f img logo», «f audio», «f .png logo».
+# Sin nombre («f img») lista los más recientes de ese tipo.
+FILE_KINDS = {
+    "img": ("Imágenes", "png jpg jpeg gif webp svg bmp tif tiff heic avif ico raw cr2 nef"),
+    "audio": ("Audio", "mp3 flac ogg opus wav m4a aac wma aiff mid midi"),
+    "video": ("Videos", "mp4 mkv webm avi mov wmv flv m4v mpg mpeg 3gp"),
+    "doc": ("Documentos", "pdf doc docx odt rtf txt md xls xlsx ods csv ppt pptx odp epub"),
+    "pdf": ("PDF", "pdf"),
+    "zip": ("Comprimidos", "zip rar 7z tar gz tgz bz2 xz zst deb rpm iso"),
+}
+FILE_KIND_WORDS = {
+    "img": "img", "imagen": "img", "imagenes": "img", "imágenes": "img", "foto": "img", "fotos": "img",
+    "aud": "audio", "audio": "audio", "audios": "audio", "mp3": "audio", "cancion": "audio",
+    "canciones": "audio", "canción": "audio",
+    "vid": "video", "video": "video", "videos": "video", "peli": "video", "pelis": "video",
+    "doc": "doc", "docs": "doc", "documento": "doc", "documentos": "doc",
+    "pdf": "pdf", "pdfs": "pdf",
+    "zip": "zip", "comprimido": "zip", "comprimidos": "zip",
+}
+
+
+def parse_file_query(q):
+    """«img logo» → ("logo", "Imágenes", [exts]); «.png logo» → ("logo", ".png", ["png"])."""
+    parts = q.strip().split(None, 1)
+    if not parts:
+        return q, None, None
+    first, rest = parts[0].lower(), (parts[1] if len(parts) > 1 else "")
+    if first in FILE_KIND_WORDS:
+        label, exts = FILE_KINDS[FILE_KIND_WORDS[first]]
+        return rest, label, exts.split()
+    if re.fullmatch(r"\.[\w]{1,8}", first):
+        return rest, first, [first[1:]]
+    return q, None, None
+
+
+def remote_mounts(root):
+    """Montajes de red/FUSE dentro de root (rclone, sshfs, smb…): fd tardaría minutos en recorrerlos."""
+    out = []
+    try:
+        for line in open("/proc/mounts"):
+            dev, mnt, fstype = line.split()[:3]
+            mnt = mnt.encode().decode("unicode_escape")
+            if (fstype.startswith("fuse.") or fstype in ("nfs", "nfs4", "cifs", "smb3", "sshfs", "davfs")) \
+                    and mnt.startswith(root.rstrip("/") + "/"):
+                out.append(os.path.relpath(mnt, root))
+    except OSError:
+        pass
+    return out
+
+
 def find_files(q):
+    name, _label, exts = parse_file_query(q)
+    recent = exts is not None and not name   # «f img» → los más recientes de ese tipo
     fd = shutil.which("fd") or shutil.which("fdfind")
     if fd:
-        cmd = [fd, "--ignore-case", "--max-results", str(MAX_FILES),
-               "--exclude", "node_modules", "--exclude", ".git", "--", q, FILE_SEARCH_ROOT]
+        cmd = [fd, "--ignore-case", "--max-results", str(3000 if recent else MAX_FILES),
+               "--exclude", "node_modules", "--exclude", ".git"]
+        for m in remote_mounts(FILE_SEARCH_ROOT):
+            cmd += ["--exclude", m]
+        if exts:
+            cmd += ["--type", "f"] + [a for e in exts for a in ("-e", e)]
+        cmd += ["--", name, FILE_SEARCH_ROOT]
         # fd ignora las carpetas ocultas, así que ~/.config, ~/.ssh, etc. quedan
         # fuera. FIND_HIDDEN=1 lo activa; por default no, para no cambiar el
         # comportamiento de la versión GTK.
@@ -420,14 +477,24 @@ def find_files(q):
             cmd[1:1] = ["--hidden", "--exclude", ".cache"]
     else:
         cmd = ["find", FILE_SEARCH_ROOT, "-maxdepth", "6", "-not", "-path", "*/.*",
-               "-iname", f"*{q}*"]
+               "-iname", f"*{name}*"]
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=4).stdout
     except subprocess.TimeoutExpired as e:
         out = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
-    paths = [p for p in out.splitlines() if p][:MAX_FILES]
+    paths = [p for p in out.splitlines() if p]
+    if exts and not fd:
+        paths = [p for p in paths if p.rsplit(".", 1)[-1].lower() in exts]
+    if recent:
+        def mtime(p):
+            try:
+                return os.path.getmtime(p)
+            except OSError:
+                return 0
+        return sorted(paths, key=mtime, reverse=True)[:MAX_FILES]
+    paths = paths[:MAX_FILES]
     # primero coincidencias en el nombre, luego rutas más cortas
-    paths.sort(key=lambda p: (q.lower() not in os.path.basename(p.rstrip("/")).lower(), len(p)))
+    paths.sort(key=lambda p: (name.lower() not in os.path.basename(p.rstrip("/")).lower(), len(p)))
     return paths
 
 

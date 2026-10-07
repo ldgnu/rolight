@@ -193,6 +193,20 @@ class Item:
         self.pixbuf_path, self.close = pixbuf_path, close
 
 
+def image_thumb(path, max_bytes=3 * 1024 * 1024):
+    """Miniatura para la lista: la del caché de miniaturas del sistema si existe; si no,
+    la imagen misma cuando es chica (decodificar fotos grandes trabaría la interfaz)."""
+    try:
+        info = Gio.File.new_for_path(path).query_info("thumbnail::path,standard::size",
+                                                      Gio.FileQueryInfoFlags.NONE, None)
+        t = info.get_attribute_byte_string("thumbnail::path")
+        if t and os.path.exists(t):
+            return t
+        return path if info.get_size() <= max_bytes else None
+    except GLib.Error:
+        return None
+
+
 def run_bg(fn, done):
     """Corre fn en un thread y entrega el resultado en el loop de GTK."""
     def worker():
@@ -1140,20 +1154,24 @@ class Rolight:
         return card, [Item(f"= {res}", "↵ copiar resultado", "accessories-calculator",
                            lambda: core.copy(res), "Calculadora")]
 
-    def file_items(self, paths):
+    def file_items(self, paths, section="Archivos"):
         home = os.path.expanduser("~")
         out = []
         for p in paths:
             p = p.rstrip("/")
+            thumb = None
             if os.path.isdir(p):
                 icon = "folder"
             else:
                 ctype, _ = Gio.content_type_guess(p, None)
                 icon = Gio.content_type_get_icon(ctype)
+                if ctype.startswith("image/"):
+                    thumb = image_thumb(p)
             parent = os.path.dirname(p).replace(home, "~", 1)
             out.append(Item(os.path.basename(p), parent, icon,
-                            lambda p=p: core.spawn(["xdg-open", p]), "Archivos",
-                            alt=lambda p=p: core.spawn(["xdg-open", os.path.dirname(p)])))
+                            lambda p=p: core.spawn(["xdg-open", p]), section,
+                            alt=lambda p=p: core.spawn(["xdg-open", os.path.dirname(p)]),
+                            pixbuf_path=thumb))
         return out
 
     def clip_items(self, q, limit=60, section="Portapapeles"):
@@ -1202,7 +1220,7 @@ class Rolight:
             return self.render([Item(name, f"«{key}» + espacio  ·  Alt+{key}", icon,
                                      lambda m=mid: self.set_mode(m) or False, "Atajos", close=False)
                                 for key, mid, name, icon in MODES]
-                               + [Item("Buscar archivos rápido", "«/» + nombre", "system-file-manager",
+                               + [Item("Buscar archivos rápido", "«/» + nombre · «/img», «/audio», «/pdf»… por tipo", "system-file-manager",
                                        lambda: self.set_mode("files") or False, "Atajos", close=False)],
                                None, "↵ entrar al modo · Ctrl+↵ alternativa en cada resultado · Esc cerrar")
         card, items = self.calc_card(q)
@@ -1260,12 +1278,17 @@ class Rolight:
         self.render(items, None, "↵ conectar con el perfil guardado · ⌫ salir")
 
     def mode_files(self, q):
+        filtros = ("<span alpha='60%'>Filtrá por tipo: <b>img</b> · <b>audio</b> · <b>video</b> · "
+                   "<b>doc</b> · <b>pdf</b> · <b>zip</b> · <b>.ext</b>  —  ej. «img logo», «.png fondo»; "
+                   "solo el tipo muestra los más recientes</span>")
         if len(q) < 2:
-            return self.render([], "<span alpha='60%'>Escribí al menos 2 letras…</span>")
+            return self.render([], "<span alpha='60%'>Escribí al menos 2 letras…</span>\n" + filtros)
+        name, label, _exts = core.parse_file_query(q)
+        que = (f"{label} " if label else "") + (f"«{name}»" if name else "recientes")
         self.render([], "<span alpha='60%'>Buscando…</span>")
         self.later(150, lambda gen: run_bg(lambda: core.find_files(q), self.deliver(gen, lambda paths: self.render(
-            self.file_items(paths) if isinstance(paths, list) else [],
-            None if paths else f"Sin archivos para «{GLib.markup_escape_text(q)}»",
+            self.file_items(paths, section=label or "Archivos") if isinstance(paths, list) else [],
+            None if paths else f"Sin resultados: {GLib.markup_escape_text(que.strip() or q)}\n" + filtros,
             "↵ abrir · Ctrl+↵ abrir carpeta · ⌫ salir"))))
 
     def mode_web(self, q):

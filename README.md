@@ -259,7 +259,7 @@ escriben en el lanzador letra + espacio y se pulsa Enter.
 | `e algo` | Sesiones IA de Claude Code, OpenCode y Hermes |
 | `i` | Sistema: CPU, RAM, swap, disco, temperaturas, ventiladores |
 | `i p algo` | Procesos, filtrables por nombre (`psutil`) |
-| `f algo` o `/algo` | Archivos (`fd`) |
+| `f algo` o `/algo` | Archivos (`fd`); filtrá por tipo: `f img logo`, `f audio`, `f .png fondo` |
 | `g algo` | Web · `ssh host` · `rdp host` · `clima` · `hora en …` |
 
 **Tailscale** (`v`): Tailscale no aparece como perfil VPN en NetworkManager
@@ -268,6 +268,13 @@ tu hostname, IP, los equipos conectados con su estado, y permite conectar o
 desconectar. Como `up`/`down` escriben en el socket de root, reintenta con
 `sudo -n` si hace falta (no queda esperando una contraseña dentro de un menú).
 Definí `ROLIGHT_TAILSCALE_WEB` si usás una instancia self-hosted o headscale.
+
+**Archivos** (`f`): la primera palabra puede ser un tipo — `img`, `audio`, `video`,
+`doc`, `pdf`, `zip` (o sus variantes: `foto`, `imagen`, `canciones`…) — o una
+extensión (`.png`). `f img logo` busca imágenes con «logo» en el nombre; el tipo solo
+(`f pdf`) muestra los más recientes. Las imágenes salen con miniatura. Los montajes de
+red/FUSE dentro de `$HOME` (rclone, sshfs, smb) se saltean: recorrerlos tardaba
+minutos y la búsqueda se cortaba sin resultados.
 
 **Sistema** (`i`): lee `/proc` y `sensors(1)`, así que no necesita nada instalado.
 Con `psutil` además muestra los procesos con CPU real por proceso, y avisa cuando
