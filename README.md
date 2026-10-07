@@ -125,7 +125,7 @@ sudo pacman -S --needed python python-gobject gtk3 gtk-layer-shell wl-clipboard 
 
 # opcionales según los modos que uses
 sudo pacman -S --needed fd networkmanager bluez-utils kanshi copyq wtype kitty \
-    swaylock playerctl brightnessctl libpulse btop rbw remmina flameshot rofi
+    swaylock playerctl brightnessctl libpulse btop rbw remmina grim slurp swappy jq rofi
 
 # fuentes e íconos (opcional, para el look de las capturas)
 sudo pacman -S --needed ttf-jetbrains-mono-nerd
@@ -149,7 +149,7 @@ sudo apt install python3 python3-gi gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1 wl-c
 
 # opcionales según los modos que uses
 sudo apt install fd-find network-manager bluez kanshi copyq wtype kitty \
-    swaylock playerctl brightnessctl pulseaudio-utils btop remmina flameshot rofi
+    swaylock playerctl brightnessctl pulseaudio-utils btop remmina grim slurp swappy jq rofi
 
 # rbw (Bitwarden) no está en apt:
 cargo install rbw

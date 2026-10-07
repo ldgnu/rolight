@@ -69,14 +69,22 @@ KB_ES = ("swaymsg input type:keyboard xkb_layout latam && swaymsg input type:key
          " && swaymsg input type:keyboard xkb_model pc104; notify-send 'Teclado en Español'")
 KB_EN = ("swaymsg input type:keyboard xkb_layout us && swaymsg input type:keyboard xkb_variant intl"
          " && swaymsg input type:keyboard xkb_model pc105; notify-send 'Teclado en Inglés'")
+# Capturas con grim + slurp (flameshot gui en sway siempre se abre en el mismo monitor).
+# Zona: se elige en cualquier monitor; con swappy se puede dibujar, si no va al portapapeles.
+SHOT_AREA = ("sleep 0.3; z=$(slurp -d) || exit 0; if command -v swappy >/dev/null; "
+             "then grim -g \"$z\" - | swappy -f -; else grim -g \"$z\" - | wl-copy; fi")
+# Pantalla completa: el monitor con foco (en sway) o todos, guardada en Imágenes y copiada
+SHOT_FULL = ("sleep 0.3; o=$(swaymsg -t get_outputs 2>/dev/null | jq -r '.[] | select(.focused).name'); "
+             "f=\"$(xdg-user-dir PICTURES)/captura-$(date +%Y%m%d-%H%M%S).png\"; "
+             "grim ${o:+-o \"$o\"} \"$f\" && wl-copy < \"$f\" && notify-send Captura \"$(basename \"$f\")\"")
 # (título, palabras clave, ícono, comando sh, sección, ¿queda abierto?)
 ACTIONS = [
     ("Teclado en Español", "teclado idioma latam español keyboard", "input-keyboard", KB_ES, "Sistema", False),
     ("Teclado en Inglés", "teclado idioma us ingles english keyboard", "input-keyboard", KB_EN, "Sistema", False),
-    ("Captura de área", "captura screenshot pantallazo flameshot recorte", "applets-screenshooter",
-     "sleep 0.3; flameshot gui", "Sistema", False),
-    ("Captura de pantalla completa", "captura screenshot pantallazo flameshot",
-     "applets-screenshooter", "sleep 0.3; flameshot screen -p \"$(xdg-user-dir PICTURES)\"", "Sistema", False),
+    ("Captura de área", "captura screenshot pantallazo recorte grim slurp", "applets-screenshooter",
+     SHOT_AREA, "Sistema", False),
+    ("Captura de pantalla completa", "captura screenshot pantallazo grim",
+     "applets-screenshooter", SHOT_FULL, "Sistema", False),
     ("Subir volumen", "volumen audio sonido mas", "audio-volume-high",
      "pactl set-sink-volume @DEFAULT_SINK@ +10%", "Audio", True),
     ("Bajar volumen", "volumen audio sonido menos", "audio-volume-low",
