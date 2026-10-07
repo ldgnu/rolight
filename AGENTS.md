@@ -8,7 +8,8 @@ rolight es un launcher para tiling WMs, en **dos interfaces** que comparten lóg
 
 | Archivo | Qué es | Se usa en |
 | --- | --- | --- |
-| `rolight.py` | GTK3 + `gtk-layer-shell`. Interfaz principal, 18 modos. | sway, Hyprland, river, niri, labwc |
+| `rolight.py` | GTK3 + `gtk-layer-shell`. Interfaz principal, 19 modos. | sway, Hyprland, river, niri, labwc |
+| `music.py` | Modo Música (solo GTK): minitone como motor, mpv por IPC. También CLI | versión GTK, terminal |
 | `core.py` | Lógica compartida **y** script de modo de rofi | las dos |
 | `rolight` | Lanzador de la versión GTK (D-Bus + daemon) | sway, Hyprland |
 | `rolight-rofi` | Lanzador de la versión rofi | i3, bspwm, Openbox, GNOME |
@@ -73,6 +74,12 @@ ROFI_RETV=1 ROFI_INFO="wifi-home:" python core.py   # una vista puntual
 pulsar Enter.
 
 ## Notas de implementación
+
+- `music.py` es stdlib pura y no importa `core`. minitone no tiene CLI: se usan sus
+  mismas fuentes (Radio Browser, yt-dlp), su formato de canción y sus archivos
+  (`~/.config/minitone/{favorites,history}.json`), y su mpv por el socket
+  `/tmp/minitone-mpv-*/ipc.sock`. El historial **no** se escribe con minitone abierto
+  (lo pisaría). Para probar sin UI: `python music.py status` / `play jazz`.
 
 - Los SSID y nombres de conexión VPN pueden contener `:`, que es el separador de
   `kind:valor`. Van con `urllib.parse.quote(safe='')`.

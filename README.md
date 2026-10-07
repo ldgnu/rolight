@@ -22,7 +22,7 @@ todo desde una sola caja y sin sacar las manos del teclado.
 - **Instantáneo.** Queda residente y se muestra/oculta por D-Bus: no hay arranque en frío cada vez que lo abrís.
 - **Liviano.** Python + GTK3, sin Electron ni servicios extra. Los modos pesados (clima, Wi-Fi, archivos)
   corren en segundo plano y nunca congelan la interfaz.
-- **Todo en un lugar.** 18 modos con atajo de una letra. Escribís y los resultados se actualizan al vuelo.
+- **Todo en un lugar.** 19 modos con atajo de una letra. Escribís y los resultados se actualizan al vuelo.
 - **Sin compilar.** Son scripts: cloná, instalá las dependencias y listo.
 
 ## Capturas
@@ -65,13 +65,14 @@ Escribí la letra + espacio (o `Alt+letra`). Con la búsqueda vacía, `Backspace
 | `x` | Acciones | Volumen, brillo, media, capturas, wallpaper, teclado | ver abajo |
 | `k` | Bitwarden | Buscar y copiar contraseñas | `rbw` |
 | `i` | Sistema | CPU, memoria, temperatura, disco, batería, procesos | `btop` (opcional) |
+| `u` | Música | Radios (Radio Browser) y YouTube (`yt …`), con estado en vivo, pausa y lista | [`minitone`](https://github.com/ldgnu/minitone), `mpv` |
 
 Cada modo solo usa su herramienta si la tenés: si falta, ese modo no anda, pero el resto sí.
 
 La tabla de arriba es de la **versión GTK** (Wayland). En la **versión rofi** (X11)
 llegan escribiendo letra + espacio: Portapapeles, Bluetooth, Wi-Fi, VPN, Bitwarden,
 Sesiones IA y Sistema. Las que no existen ahí son **Monitores** y **Acciones**
-(volumen, brillo, capturas), porque dependen de `swaymsg`/`kanshi`. Está detallado
+(volumen, brillo, capturas), porque dependen de `swaymsg`/`kanshi`, y **Música**, que por ahora es solo GTK. Está detallado
 en la [sección de i3](#configuración-por-window-manager).
 
 ---
@@ -357,3 +358,23 @@ Historial y caché: `~/.cache/rolight/` · Log: `~/.cache/rolight/rolight.log`
 ## Licencia
 
 [MIT](LICENSE) © Javi Solis
+
+## Música con minitone
+
+El modo `u` (o escribir `music jazz`, `radio …`, `música …`, `minitone …`) usa **minitone** como motor:
+busca en las mismas fuentes (Radio Browser, y YouTube con `yt <búsqueda>`), muestra tus
+favoritos y el historial de minitone, y si minitone está abierto controla su reproductor.
+Si no, levanta un `mpv` propio en segundo plano (`$XDG_RUNTIME_DIR/rolight-mpv.sock`).
+
+La tarjeta muestra en vivo la radio, el tema que suena (metadatos ICY), país, género, bitrate,
+tiempo, volumen y la posición en la lista. `↵` escucha · `Ctrl+↵` escucha y cierra ·
+`Ctrl+Espacio` pausa · `Ctrl+←/→` anterior/siguiente · `Ctrl++/-` volumen · `Ctrl+S` detener ·
+`Ctrl+O` abre minitone.
+
+También desde la terminal o un atajo de sway / módulo de waybar:
+
+```sh
+~/.config/rolight/music.py play jazz      # busca y reproduce la primera radio
+~/.config/rolight/music.py toggle         # next · prev · stop · vol+ · vol-
+~/.config/rolight/music.py status --json  # para un módulo custom de waybar
+```

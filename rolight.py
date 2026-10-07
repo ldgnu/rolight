@@ -32,6 +32,7 @@ os.environ["PATH"] = os.pathsep.join([os.path.expanduser("~/.local/bin"), os.pat
                                       os.path.expanduser("~/.opencode/bin"),
                                       os.environ.get("PATH", "")])
 import core  # noqa: E402
+import music  # noqa: E402
 
 APP_ID = "io.github.ldgnu.Rolight"
 WIDTH = 720
@@ -58,6 +59,7 @@ MODES = [
     ("x", "actions", "Acciones", "system-run"),
     ("k", "bw", "Bitwarden", "dialog-password"),
     ("i", "stats", "Sistema", "utilities-system-monitor"),
+    ("u", "music", "Música", "audio-x-generic"),
 ]
 STAT_WORDS = ("cpu", "mem", "memoria", "ram", "temp", "temperatura", "disco", "disk", "bateria", "batería",
               "battery", "sistema", "stats", "procesos", "proc", "ventilador", "fan", "swap", "carga")
@@ -122,7 +124,9 @@ MODE_BY_ID = {m[1]: m for m in MODES}
 WORD_MODES = {"clima": "weather", "tiempo": "weather", "hora": "time", "ssh": "ssh",
               "rdp": "rdp", "vnc": "rdp", "ia": "ai", "sesiones": "sessions", "web": "web", "calc": "calc",
               "vpn": "vpn", "wireguard": "vpn", "wifi": "wifi", "bt": "bt",
-              "bluetooth": "bt", "monitor": "monitor", "monitores": "monitor"}
+              "bluetooth": "bt", "monitor": "monitor", "monitores": "monitor",
+              "music": "music", "musica": "music", "música": "music", "radio": "music",
+              "minitone": "music"}
 # palabras que, escritas en la búsqueda general, sugieren entrar al modo
 MODE_HINTS = {"clip": "portapapeles clipboard copiar", "files": "archivos files",
               "vpn": "vpn wireguard openvpn", "wifi": "wifi red wireless internet",
@@ -130,7 +134,8 @@ MODE_HINTS = {"clip": "portapapeles clipboard copiar", "files": "archivos files"
               "weather": "clima tiempo", "power": "energia apagar reiniciar",
               "ssh": "ssh servidor", "rdp": "rdp remmina escritorio remoto",
               "bw": "bitwarden contraseñas password claves usuario",
-              "sessions": "sesiones claude opencode hermes agentes retomar"}
+              "sessions": "sesiones claude opencode hermes agentes retomar",
+              "music": "music musica música radio minitone reproducir escuchar jazz"}
 KANSHI_CONFIG = os.path.expanduser("~/.config/kanshi/config")
 MONITOR_SCRIPTS = os.path.expanduser("~/.config/sway/scripts")
 
@@ -619,6 +624,8 @@ class Rolight:
         self.remmina = sorted(core.remmina_profiles(), key=lambda r: r[0].lower())
         self.stats = Stats()
         self._stats_timer = None
+        self._music_timer = None
+        self.music_cache = {}
         self.pix_cache = {}
         self.ai_answer = ""
         self.ai_session = None
@@ -942,6 +949,8 @@ class Rolight:
             if row:
                 self.activate(row.item, ctrl)
             return True
+        if self.mode == "music" and ctrl and self.music_key(k):
+            return True
         if k == Gdk.KEY_BackSpace and self.mode and not self.entry.get_text():
             self.mode, self.confirm = None, None
             self.update()
@@ -997,6 +1006,7 @@ class Rolight:
             "actions": "Teclado, captura, volumen, wallpaper, tema…",
             "bw": "Buscar en Bitwarden",
             "stats": "Filtrar procesos…",
+            "music": "Radio o género (jazz, tango…) · «yt …» busca en YouTube",
         }[self.mode]
 
     @staticmethod
@@ -1662,6 +1672,181 @@ class Rolight:
                           lambda: core.spawn(["nwg-displays"]), "Opciones"))
         self.render(items, f"<span alpha='60%'>Activos:</span> {GLib.markup_escape_text(active)}",
                     "↵ aplicar perfil · ⌫ salir")
+
+
+    # ── música (minitone) ────────────────────────────────────────────
+    MUSIC_GENRES = ("jazz", "lofi", "tango", "rock nacional", "folklore", "clásica", "blues", "ambient")
+
+    def music_key(self, k):
+        if k == Gdk.KEY_space:
+            return self._music_do(music.toggle) or True
+        if k in (Gdk.KEY_Right, Gdk.KEY_Left):
+            return self._music_do(lambda: music.step(1 if k == Gdk.KEY_Right else -1)) or True
+        if k in (Gdk.KEY_plus, Gdk.KEY_equal, Gdk.KEY_KP_Add, Gdk.KEY_minus, Gdk.KEY_KP_Subtract):
+            return self._music_do(lambda: music.volume(-5 if k in (Gdk.KEY_minus, Gdk.KEY_KP_Subtract) else 5)) or True
+        if k == Gdk.KEY_s:
+            return self._music_do(music.stop) or True
+        if k == Gdk.KEY_o:
+            return self._open_minitone() or True
+        return False
+
+    def _music_do(self, fn, close=False):
+        """Corre un control de música en segundo plano y refresca el estado."""
+        def done(res):
+            if isinstance(res, Exception):
+                core.notify("Música", str(res))
+            elif res is False:
+                core.notify("Música", "No hay más en la lista")
+            if not close and self.win.get_visible() and self.mode == "music":
+                self._music_refresh(force=True)
+        run_bg(fn, done)
+        return False
+
+    def _music_play(self, songs, idx, close=False):
+        self._music_do(lambda: music.play(songs, idx), close)
+        if close:
+            self.hide()
+        else:
+            self.set_card(f"<span alpha='60%'>Conectando con {GLib.markup_escape_text(songs[idx]['title'])}…</span>")
+        return False
+
+    def _open_minitone(self):
+        core.spawn(core.TERMINAL + ["--class", "rolight-ai", "--title", "minitone", "minitone"])
+        self.hide()
+        return False
+
+    def _music_markup(self, s):
+        if not s:
+            return ("<span alpha='60%'>Nada sonando. Buscá una radio o género y ↵ para escuchar"
+                    " (con minitone).</span>")
+        e = GLib.markup_escape_text
+        state = "<span foreground='#E9B350'>⏸ en pausa</span>" if s["paused"] else \
+            "<span foreground='#50E9A4'>▶ sonando</span>"
+        out = f"<span size='large' weight='bold'>♪ {e(s['station'])}</span>   {state}"
+        if s["title"]:
+            out += f"\n<span size='large'>{e(s['title'])}</span>"
+        t = music.clock(s["elapsed"]) + (f" / {music.clock(s['duration'])}" if s["duration"] else "")
+        bits = [s["artist"], s["genre"], f"{s['kbps']} kbps {s['codec']}".strip() if s["kbps"] else s["codec"],
+                t, f"vol {s['volume']}%"]
+        if s["total"]:
+            bits.append(f"{s['index'] + 1}/{s['total']}")
+        bits.append("vía minitone" if s["owner"] == "minitone" else "rolight · motor minitone")
+        return out + "\n<span alpha='60%'>" + e("  ·  ".join(b for b in bits if b)) + "</span>"
+
+    def _music_controls(self, s):
+        if not s:
+            return []
+        do = self._music_do
+        items = [Item("Reanudar" if s["paused"] else "Pausar", "Ctrl+Espacio",
+                      "media-playback-start" if s["paused"] else "media-playback-pause",
+                      lambda: do(music.toggle), "Reproduciendo", close=False)]
+        if s["total"]:
+            if s["index"] + 1 < s["total"]:
+                items.append(Item("Siguiente", "Ctrl+→", "media-skip-forward",
+                                  lambda: do(lambda: music.step(1)), "Reproduciendo", close=False))
+            if s["index"] > 0:
+                items.append(Item("Anterior", "Ctrl+←", "media-skip-backward",
+                                  lambda: do(lambda: music.step(-1)), "Reproduciendo", close=False))
+        items += [Item("Subir volumen", "Ctrl++", "audio-volume-high",
+                       lambda: do(lambda: music.volume(5)), "Reproduciendo", close=False),
+                  Item("Bajar volumen", "Ctrl+-", "audio-volume-low",
+                       lambda: do(lambda: music.volume(-5)), "Reproduciendo", close=False),
+                  Item("Detener", "Ctrl+S", "media-playback-stop",
+                       lambda: do(music.stop), "Reproduciendo", close=False)]
+        return items
+
+    def _song_items(self, songs, section):
+        items = []
+        for i, sg in enumerate(songs):
+            if sg.get("source") == "youtube":
+                sub = " · ".join(b for b in ("YouTube", sg.get("artist"),
+                                             music.clock(sg["duration"]) if sg.get("duration") else "") if b)
+                icon = "video-x-generic"
+            else:
+                kb = f"{sg['bitrate']} kbps" if sg.get("bitrate") else ""
+                sub = " · ".join(b for b in (sg.get("artist"), sg.get("genre"), kb, sg.get("format")) if b)
+                icon = "audio-x-generic"
+            items.append(Item(sg.get("title") or sg["url"], sub, icon,
+                              lambda s=songs, n=i: self._music_play(s, n), section, close=False,
+                              alt=lambda s=songs, n=i: self._music_play(s, n, close=True)))
+        return items
+
+    def mode_music(self, q):
+        missing = music.available()
+        if missing:
+            return self.render([Item("Instalar minitone", "github.com/ldgnu/minitone", "web-browser",
+                                     lambda: core.open_url("https://github.com/ldgnu/minitone"))],
+                               f"<b>El modo música usa minitone</b>\n<span alpha='60%'>{missing}</span>")
+        s = self.music_cache.get("_status")
+        ql = q.lower()
+        favs = [f for f in self.music_cache.setdefault("_favs", music.favorites())
+                if not ql or ql in (f.get("title", "") + " " + f.get("artist", "")).lower()]
+        footer = "↵ escuchar · Ctrl+↵ escuchar y cerrar · Ctrl+Espacio pausa · Ctrl+←/→ lista · Ctrl+O minitone"
+        base = self._music_controls(s) + self._song_items(favs[:8], "Favoritos de minitone")
+        if not q:
+            base += self._song_items(music.history()[:6], "Recientes en minitone")
+            base += [Item(g.capitalize(), "buscar radios", "audio-x-generic",
+                          lambda g=g: self.set_mode("music", g) or False, "Géneros", close=False)
+                     for g in self.MUSIC_GENRES]
+            if not music.minitone_running():
+                base.append(Item("Abrir minitone", "Ctrl+O · reproductor completo en terminal",
+                                 "utilities-terminal", self._open_minitone, "Más"))
+            self.render(base, self._music_markup(s), footer)
+        else:
+            yt = re.match(r"^(yt|youtube)\s+(.+)$", q, re.I)
+            term, src = (yt.group(2), "YouTube") if yt else (q, "Radios")
+            key = f"{src}:{term.lower()}"
+            show = lambda res: self.render(  # noqa: E731
+                base + (self._song_items(res, src) if isinstance(res, list) else
+                        [Item("Reintentar", GLib.markup_escape_text(str(res))[:120], "view-refresh",
+                              lambda: self.update() or False, src,
+                              close=False)]),
+                self._music_markup(s), footer)
+            if key in self.music_cache:
+                show(self.music_cache[key])
+            else:
+                self.render(base, self._music_markup(s) + f"\n<span alpha='60%'>Buscando en {src}…</span>",
+                            footer)
+                finder = (lambda: music.search_youtube(term)) if yt else (lambda: music.search_radio(term))
+
+                def found(res):
+                    if isinstance(res, list):
+                        self.music_cache[key] = res
+                    show(res)
+                self.later(450, lambda gen: run_bg(finder, self.deliver(gen, found)))
+        self._music_refresh()
+
+    def _music_refresh(self, force=False):
+        """Lee el estado del reproductor en segundo plano; tick de 1s mientras el modo está abierto."""
+        def done(s):
+            if isinstance(s, Exception) or not self.win.get_visible() or self.mode != "music":
+                return
+            old = self.music_cache.get("_status")
+            self.music_cache["_status"] = s
+            sig = lambda x: x and (x["paused"], x["owner"], x["index"], x["total"])  # noqa: E731
+            if force or sig(old) != sig(s):
+                self.music_cache.pop("_favs", None)
+                sel = self.listbox.get_selected_row()
+                idx = sel.get_index() if sel else 0
+                self.update()
+                row = self.listbox.get_row_at_index(min(idx, max(len(self.items) - 1, 0)))
+                if row:
+                    self.listbox.select_row(row)
+            elif not self.confirm:
+                card = self.card.get_text()
+                if "Buscando" not in card and "Conectando" not in card:
+                    self.set_card(self._music_markup(s))
+        if force:
+            run_bg(music.status, done)
+        if self._music_timer is None:
+            def tick():
+                if not self.win.get_visible() or self.mode != "music":
+                    self._music_timer = None
+                    return False
+                run_bg(music.status, done)
+                return True
+            self._music_timer = GLib.timeout_add(1000, tick)
+            run_bg(music.status, done)
 
 
 class App(Gtk.Application):
