@@ -380,6 +380,10 @@ def apply_kanshi(outputs):
         listed.add(name)
         args = " ".join(parts[2:])
         args = re.sub(r"position\s+(-?\d+),(-?\d+)", r"position \1 \2", args)
+        # kanshi usa el sentido de wl_output (antihorario) y swaymsg el horario:
+        # el 270 de kanshi es el 90 de sway y viceversa
+        args = re.sub(r"transform\s+(flipped-)?(90|270)\b",
+                      lambda m: f"transform {m[1] or ''}{'270' if m[2] == '90' else '90'}", args)
         cmds.append(f"output {name} {args}")
     for name in connected - listed:
         cmds.append(f"output {name} disable")
