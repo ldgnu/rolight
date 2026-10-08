@@ -315,7 +315,13 @@ def play(queue, idx=0):
             ipc(s, "set_property", "pause", True)
         except Exception:  # noqa: BLE001
             pass
-    ipc(sock, "loadfile", song["url"], "replace", timeout=2)
+    # toda la lista va a mpv: así anterior/siguiente andan también desde playerctl
+    # (Alt+J/K vía mpv-mpris) aunque rolight esté cerrado
+    ipc(sock, "loadfile", queue[0]["url"], "replace", timeout=2)
+    for sg in queue[1:]:
+        ipc(sock, "loadfile", sg["url"], "append")
+    if idx:
+        ipc(sock, "set_property", "playlist-pos", idx)
     ipc(sock, "set_property", "pause", False)
     state = _load(STATE, {})
     state.update(queue=queue, idx=idx)
@@ -331,11 +337,23 @@ def step(delta):
     if owner == "minitone":
         return False
     st = _load(STATE, {})
-    queue, idx = st.get("queue") or [], st.get("idx", 0) + delta
-    if not 0 <= idx < len(queue):
+    queue = st.get("queue") or []
+    idx = _pos(sock, st) + delta
+    if not sock or not 0 <= idx < len(queue):
         return False
-    play(queue, idx)
+    ipc(sock, "set_property", "playlist-pos", idx)
+    ipc(sock, "set_property", "pause", False)
+    st["idx"] = idx
+    _save(STATE, st)
+    _add_history(queue[idx])
+    _click(queue[idx])
     return True
+
+
+def _pos(sock, st):
+    """Posición real en la lista de mpv (pudo moverse con playerctl); si no, la guardada."""
+    pos = prop(sock, "playlist-pos") if sock else None
+    return pos if isinstance(pos, int) and pos >= 0 else st.get("idx", 0)
 
 
 def toggle():
@@ -380,7 +398,7 @@ def status():
     meta = prop(sock, "metadata") or {}
     title = meta.get("icy-title") or prop(sock, "media-title") or ""
     st = _load(STATE, {}) if owner == "rolight" else {}
-    queue, idx = st.get("queue") or [], st.get("idx", 0)
+    queue, idx = st.get("queue") or [], _pos(sock, st) if owner == "rolight" else 0
     song = queue[idx] if owner == "rolight" and 0 <= idx < len(queue) else {}
     station = song.get("title") or meta.get("icy-name") or ""
     if title == station or title == os.path.basename(prop(sock, "path") or ""):

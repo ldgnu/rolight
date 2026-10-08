@@ -991,10 +991,6 @@ class Rolight:
             if row:
                 self.activate(row.item, ctrl)
             return True
-        if self.mode == "audio" and ctrl and self.audio_key(k):
-            return True
-        if self.mode == "music" and ctrl and self.music_key(k):
-            return True
         if k == Gdk.KEY_BackSpace and self.mode and not self.entry.get_text():
             self.mode, self.confirm = None, None
             self.update()
@@ -1739,16 +1735,6 @@ class Rolight:
         "mSBC": (7, "llamada con micrófono"), "CVSD": (8, "llamada con micrófono, la calidad más baja"),
     }
 
-    def audio_key(self, k):
-        do = self._audio_do
-        if k in (Gdk.KEY_plus, Gdk.KEY_equal, Gdk.KEY_KP_Add, Gdk.KEY_minus, Gdk.KEY_KP_Subtract):
-            return do(lambda: audio.volume(-5 if k in (Gdk.KEY_minus, Gdk.KEY_KP_Subtract) else 5)) or True
-        if k == Gdk.KEY_m:
-            return do(lambda: audio.mute("sink")) or True
-        if k == Gdk.KEY_space:
-            return do(lambda: audio.mute("source")) or True
-        return False
-
     def _audio_do(self, fn, msg=None):
         """Corre un cambio de audio en segundo plano y vuelve a leer el estado."""
         if msg:
@@ -1767,6 +1753,23 @@ class Rolight:
         if missing:
             return self.render([], f"<b>Sonido</b>\n<span alpha='60%'>{missing}</span>")
         self.async_mode("audio", audio.state, lambda st: self._show_audio(q, st), "Leyendo el audio…")
+        if getattr(self, "_audio_timer", None) is None:
+            self._audio_timer = GLib.timeout_add(1500, self._audio_tick)
+
+    def _audio_tick(self):
+        """Los atajos de sway (Alt+=, Alt+Shift+M…) cambian el audio con rolight abierto: refrescar."""
+        if not self.win.get_visible() or self.mode != "audio":
+            self._audio_timer = None
+            return False
+
+        def done(st):
+            if isinstance(st, Exception) or self.mode != "audio" or self.confirm:
+                return
+            if repr(st) != repr(self.sys_cache.get("audio")):
+                self.sys_cache["audio"] = st
+                self._show_audio(self.query(), st)
+        run_bg(audio.state, done)
+        return True
 
     def _show_audio(self, q, st):
         if isinstance(st, Exception):
@@ -1822,13 +1825,13 @@ class Rolight:
                                                                  f"Cambiando a {p['codec']}"),
                                   f"Bluetooth · {b['name']} · codec", close=False))
         items += [
-            Item("Subir volumen", "Ctrl++", "audio-volume-high", lambda: do(lambda: audio.volume(5)),
+            Item("Subir volumen", "Alt+= (en cualquier lado)", "audio-volume-high", lambda: do(lambda: audio.volume(5)),
                  "Volumen", close=False),
-            Item("Bajar volumen", "Ctrl+-", "audio-volume-low", lambda: do(lambda: audio.volume(-5)),
+            Item("Bajar volumen", "Alt+-", "audio-volume-low", lambda: do(lambda: audio.volume(-5)),
                  "Volumen", close=False),
-            Item("Activar el sonido" if out and out["muted"] else "Silenciar la salida", "Ctrl+M",
+            Item("Activar el sonido" if out and out["muted"] else "Silenciar la salida", "Alt+Shift+M",
                  "audio-volume-muted", lambda: do(lambda: audio.mute("sink")), "Volumen", close=False),
-            Item("Activar el micrófono" if mic and mic["muted"] else "Silenciar el micrófono", "Ctrl+Espacio",
+            Item("Activar el micrófono" if mic and mic["muted"] else "Silenciar el micrófono", "Alt+Shift+V o la tecla de micrófono",
                  "microphone-sensitivity-muted", lambda: do(lambda: audio.mute("source")), "Volumen",
                  close=False),
         ]
@@ -1840,7 +1843,7 @@ class Rolight:
             items = [it for it in items if ql in f"{it.title} {it.sub} {it.section}".lower()]
         sel = self.listbox.get_selected_row()
         idx = sel.get_index() if sel else 0
-        self.render(items, card, "↵ usar · Ctrl+± volumen · Ctrl+M silenciar · Ctrl+Espacio mic · Esc cerrar")
+        self.render(items, card, "↵ usar · Alt+=/- volumen · Alt+Shift+M silenciar · Alt+Shift+V mic · Esc cerrar")
         row = self.listbox.get_row_at_index(min(idx, max(len(items) - 1, 0)))
         if row:
             self.listbox.select_row(row)
@@ -1912,19 +1915,6 @@ class Rolight:
     # ── música (minitone) ────────────────────────────────────────────
     MUSIC_GENRES = ("jazz", "lofi", "tango", "rock nacional", "folklore", "clásica", "blues", "ambient")
 
-    def music_key(self, k):
-        if k == Gdk.KEY_space:
-            return self._music_do(music.toggle) or True
-        if k in (Gdk.KEY_Right, Gdk.KEY_Left):
-            return self._music_do(lambda: music.step(1 if k == Gdk.KEY_Right else -1)) or True
-        if k in (Gdk.KEY_plus, Gdk.KEY_equal, Gdk.KEY_KP_Add, Gdk.KEY_minus, Gdk.KEY_KP_Subtract):
-            return self._music_do(lambda: music.volume(-5 if k in (Gdk.KEY_minus, Gdk.KEY_KP_Subtract) else 5)) or True
-        if k == Gdk.KEY_s:
-            return self._music_do(music.stop) or True
-        if k == Gdk.KEY_o:
-            return self._open_minitone() or True
-        return False
-
     def _music_do(self, fn, close=False):
         """Corre un control de música en segundo plano y refresca el estado."""
         def done(res):
@@ -1972,21 +1962,21 @@ class Rolight:
         if not s:
             return []
         do = self._music_do
-        items = [Item("Reanudar" if s["paused"] else "Pausar", "Ctrl+Espacio",
+        items = [Item("Reanudar" if s["paused"] else "Pausar", "Alt+L (también con rolight cerrado)",
                       "media-playback-start" if s["paused"] else "media-playback-pause",
                       lambda: do(music.toggle), "Reproduciendo", close=False)]
         if s["total"]:
             if s["index"] + 1 < s["total"]:
-                items.append(Item("Siguiente", "Ctrl+→", "media-skip-forward",
+                items.append(Item("Siguiente", "Alt+K", "media-skip-forward",
                                   lambda: do(lambda: music.step(1)), "Reproduciendo", close=False))
             if s["index"] > 0:
-                items.append(Item("Anterior", "Ctrl+←", "media-skip-backward",
+                items.append(Item("Anterior", "Alt+J", "media-skip-backward",
                                   lambda: do(lambda: music.step(-1)), "Reproduciendo", close=False))
-        items += [Item("Subir volumen", "Ctrl++", "audio-volume-high",
+        items += [Item("Subir volumen de la radio", "solo la radio · Alt+= sube el de todo", "audio-volume-high",
                        lambda: do(lambda: music.volume(5)), "Reproduciendo", close=False),
-                  Item("Bajar volumen", "Ctrl+-", "audio-volume-low",
+                  Item("Bajar volumen de la radio", "solo la radio · Alt+- baja el de todo", "audio-volume-low",
                        lambda: do(lambda: music.volume(-5)), "Reproduciendo", close=False),
-                  Item("Detener", "Ctrl+S", "media-playback-stop",
+                  Item("Detener", "", "media-playback-stop",
                        lambda: do(music.stop), "Reproduciendo", close=False)]
         return items
 
@@ -2016,7 +2006,7 @@ class Rolight:
         ql = q.lower()
         favs = [f for f in self.music_cache.setdefault("_favs", music.favorites())
                 if not ql or ql in (f.get("title", "") + " " + f.get("artist", "")).lower()]
-        footer = "↵ escuchar · Ctrl+↵ escuchar y cerrar · Ctrl+Espacio pausa · Ctrl+←/→ lista · Ctrl+O minitone"
+        footer = "↵ escuchar · Ctrl+↵ escuchar y cerrar · Alt+L pausa · Alt+J/K anterior/siguiente"
         base = self._music_controls(s) + self._song_items(favs[:8], "Favoritos de minitone")
         if not q:
             base += self._song_items(music.history()[:6], "Recientes en minitone")
@@ -2024,7 +2014,7 @@ class Rolight:
                           lambda g=g: self.set_mode("music", g) or False, "Géneros", close=False)
                      for g in self.MUSIC_GENRES]
             if not music.minitone_running():
-                base.append(Item("Abrir minitone", "Ctrl+O · reproductor completo en terminal",
+                base.append(Item("Abrir minitone", "reproductor completo en terminal",
                                  "utilities-terminal", self._open_minitone, "Más"))
             self.render(base, self._music_markup(s), footer)
         else:

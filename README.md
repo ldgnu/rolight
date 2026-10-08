@@ -402,7 +402,8 @@ micrófono está activo y quién lo usa. Debajo:
   de otro perfil de la placa (parlantes ↔ auriculares con cable), cambia el perfil solo.
 - **Bluetooth · codec:** AAC, SBC-XQ, SBC, LDAC/aptX si los soporta, o modo llamada
   (mSBC/CVSD) con micrófono, ordenados por calidad y con una línea de para qué sirve cada uno.
-- Volumen: `Ctrl+±`, `Ctrl+M` silencia la salida, `Ctrl+Espacio` el micrófono.
+- Volumen, silencio y micrófono también como filas. Sin atajos propios: se usan los del WM
+  (p. ej. Alt+=/-, Alt+Shift+M, Alt+Shift+V) y el modo se refresca solo cuando cambian.
 
 `audio.py status` imprime un resumen de una línea (sirve para la barra).
 
@@ -414,9 +415,10 @@ favoritos y el historial de minitone, y si minitone está abierto controla su re
 Si no, levanta un `mpv` propio en segundo plano (`$XDG_RUNTIME_DIR/rolight-mpv.sock`).
 
 La tarjeta muestra en vivo la radio, el tema que suena (metadatos ICY), país, género, bitrate,
-tiempo, volumen y la posición en la lista. `↵` escucha · `Ctrl+↵` escucha y cierra ·
-`Ctrl+Espacio` pausa · `Ctrl+←/→` anterior/siguiente · `Ctrl++/-` volumen · `Ctrl+S` detener ·
-`Ctrl+O` abre minitone.
+tiempo, volumen y la posición en la lista. `↵` escucha · `Ctrl+↵` escucha y cierra.
+Toda la lista se carga en mpv, que con `mpv-mpris` aparece en `playerctl`: los atajos globales
+(`playerctl -p playerctld play-pause|next|previous`, p. ej. Alt+L/J/K) pausan y cambian de
+radio aunque rolight esté cerrado.
 
 También desde la terminal o un atajo de sway / módulo de waybar:
 
