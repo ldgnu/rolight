@@ -22,7 +22,7 @@ todo desde una sola caja y sin sacar las manos del teclado.
 - **Instantáneo.** Queda residente y se muestra/oculta por D-Bus: no hay arranque en frío cada vez que lo abrís.
 - **Liviano.** Python + GTK3, sin Electron ni servicios extra. Los modos pesados (clima, Wi-Fi, archivos)
   corren en segundo plano y nunca congelan la interfaz.
-- **Todo en un lugar.** 20 modos con atajo de una letra. Escribís y los resultados se actualizan al vuelo.
+- **Todo en un lugar.** 21 modos con atajo de una letra. Escribís y los resultados se actualizan al vuelo.
 - **Sin compilar.** Son scripts: cloná, instalá las dependencias y listo.
 
 ## Capturas
@@ -67,13 +67,14 @@ Escribí la letra + espacio (o `Alt+letra`). Con la búsqueda vacía, `Backspace
 | `i` | Sistema | CPU, memoria, temperatura, disco, batería, procesos | `btop` (opcional) |
 | `u` | Música | Radios (Radio Browser) y YouTube (`yt …`), con estado en vivo, pausa y lista | [`minitone`](https://github.com/ldgnu/minitone), `mpv` |
 | `n` | Notificaciones | Historial de dunst (nuevas arriba), silenciar, no molestar 1 h, limpiar | `dunst` |
+| `o` | Sonido | Qué suena por dónde y quién usa el mic; cambiar salida, micrófono y codec Bluetooth | `pactl` (PipeWire o PulseAudio) |
 
 Cada modo solo usa su herramienta si la tenés: si falta, ese modo no anda, pero el resto sí.
 
 La tabla de arriba es de la **versión GTK** (Wayland). En la **versión rofi** (X11)
 llegan escribiendo letra + espacio: Portapapeles, Bluetooth, Wi-Fi, VPN, Bitwarden,
 Sesiones IA y Sistema. Las que no existen ahí son **Monitores** y **Acciones**
-(volumen, brillo, capturas), porque dependen de `swaymsg`/`kanshi`, y **Música** y **Notificaciones**, que por ahora son solo GTK. Está detallado
+(volumen, brillo, capturas), porque dependen de `swaymsg`/`kanshi`, y **Música**, **Notificaciones** y **Sonido**, que por ahora son solo GTK. Está detallado
 en la [sección de i3](#configuración-por-window-manager).
 
 ---
@@ -389,6 +390,21 @@ roja si alguna es crítica, tachada en silencio):
 
 Para que se actualice al instante, que dunst corra `pkill -RTMIN+9 -x waybar` con cada
 notificación (una regla con `summary = "*"` y `script = …`).
+
+## Sonido
+
+El modo `o` (o `audio …`, `sonido …`, `mic …`, `codec …`) pone arriba **lo que se está
+usando**: por dónde sale el sonido (volumen, codec si es Bluetooth y qué apps suenan) y qué
+micrófono está activo y quién lo usa. Debajo:
+
+- **Salida** y **Micrófono** con nombres claros («Parlantes de la notebook», «Micrófono de
+  JBL…»). `↵` lo deja por defecto y mueve ahí lo que esté sonando o grabando. Si la salida es
+  de otro perfil de la placa (parlantes ↔ auriculares con cable), cambia el perfil solo.
+- **Bluetooth · codec:** AAC, SBC-XQ, SBC, LDAC/aptX si los soporta, o modo llamada
+  (mSBC/CVSD) con micrófono, ordenados por calidad y con una línea de para qué sirve cada uno.
+- Volumen: `Ctrl+±`, `Ctrl+M` silencia la salida, `Ctrl+Espacio` el micrófono.
+
+`audio.py status` imprime un resumen de una línea (sirve para la barra).
 
 ## Música con minitone
 

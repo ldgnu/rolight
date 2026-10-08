@@ -34,6 +34,7 @@ os.environ["PATH"] = os.pathsep.join([os.path.expanduser("~/.local/bin"), os.pat
 import core  # noqa: E402
 import music  # noqa: E402
 import notifs  # noqa: E402
+import audio  # noqa: E402
 
 APP_ID = "io.github.ldgnu.Rolight"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -63,6 +64,7 @@ MODES = [
     ("i", "stats", "Sistema", "utilities-system-monitor"),
     ("u", "music", "Música", "audio-x-generic"),
     ("n", "notifs", "Notificaciones", "preferences-system-notifications"),
+    ("o", "audio", "Sonido", "audio-speakers"),
 ]
 STAT_WORDS = ("cpu", "mem", "memoria", "ram", "temp", "temperatura", "disco", "disk", "bateria", "batería",
               "battery", "sistema", "stats", "procesos", "proc", "ventilador", "fan", "swap", "carga")
@@ -138,6 +140,8 @@ WORD_MODES = {"clima": "weather", "tiempo": "weather", "hora": "time", "ssh": "s
               "bluetooth": "bt", "monitor": "monitor", "monitores": "monitor",
               "music": "music", "musica": "music", "música": "music", "radio": "music",
               "minitone": "music", "notif": "notifs", "notificaciones": "notifs", "dunst": "notifs",
+              "audio": "audio", "sonido": "audio", "mic": "audio", "microfono": "audio", "micrófono": "audio",
+              "pavucontrol": "audio", "codec": "audio",
               "buscar": "files", "archivos": "files", "archivo": "files"}
 # palabras que, escritas en la búsqueda general, sugieren entrar al modo
 MODE_HINTS = {"clip": "portapapeles clipboard copiar", "files": "archivos files",
@@ -148,7 +152,8 @@ MODE_HINTS = {"clip": "portapapeles clipboard copiar", "files": "archivos files"
               "bw": "bitwarden contraseñas password claves usuario",
               "sessions": "sesiones claude opencode hermes agentes retomar",
               "music": "music musica música radio minitone reproducir escuchar jazz",
-              "notifs": "notificaciones notifications avisos alertas dunst silenciar molestar"}
+              "notifs": "notificaciones notifications avisos alertas dunst silenciar molestar",
+              "audio": "audio sonido volumen parlantes auriculares micrófono microfono mic placa codec"}
 KANSHI_CONFIG = os.path.expanduser("~/.config/kanshi/config")
 MONITOR_SCRIPTS = os.path.expanduser("~/.config/sway/scripts")
 
@@ -986,6 +991,8 @@ class Rolight:
             if row:
                 self.activate(row.item, ctrl)
             return True
+        if self.mode == "audio" and ctrl and self.audio_key(k):
+            return True
         if self.mode == "music" and ctrl and self.music_key(k):
             return True
         if k == Gdk.KEY_BackSpace and self.mode and not self.entry.get_text():
@@ -1044,6 +1051,7 @@ class Rolight:
             "bw": "Buscar en Bitwarden",
             "stats": "Filtrar procesos…",
             "notifs": "Buscar en las notificaciones",
+            "audio": "Salida, micrófono o codec…",
             "music": "Radio o género (jazz, tango…) · «yt …» busca en YouTube",
         }[self.mode]
 
@@ -1720,6 +1728,122 @@ class Rolight:
         self.render(items, f"<span alpha='60%'>Activos:</span> {GLib.markup_escape_text(active)}",
                     "↵ aplicar perfil · ⌫ salir")
 
+
+    # ── sonido (PipeWire / PulseAudio) ───────────────────────────────
+    BT_CODECS = {  # orden de calidad y explicación corta
+        "LDAC": (0, "la mejor calidad (Sony), gasta más batería"),
+        "aptX HD": (1, "muy alta calidad"), "aptX": (2, "alta calidad, poca demora"),
+        "AAC": (3, "la mejor calidad para la mayoría de auriculares"),
+        "SBC-XQ": (4, "alta calidad y compatible"), "SBC": (5, "básico, el más estable si se corta"),
+        "LC3": (6, "llamada con micrófono, buena calidad"), "MSBC": (7, "llamada con micrófono"),
+        "mSBC": (7, "llamada con micrófono"), "CVSD": (8, "llamada con micrófono, la calidad más baja"),
+    }
+
+    def audio_key(self, k):
+        do = self._audio_do
+        if k in (Gdk.KEY_plus, Gdk.KEY_equal, Gdk.KEY_KP_Add, Gdk.KEY_minus, Gdk.KEY_KP_Subtract):
+            return do(lambda: audio.volume(-5 if k in (Gdk.KEY_minus, Gdk.KEY_KP_Subtract) else 5)) or True
+        if k == Gdk.KEY_m:
+            return do(lambda: audio.mute("sink")) or True
+        if k == Gdk.KEY_space:
+            return do(lambda: audio.mute("source")) or True
+        return False
+
+    def _audio_do(self, fn, msg=None):
+        """Corre un cambio de audio en segundo plano y vuelve a leer el estado."""
+        if msg:
+            self.set_card(f"<span alpha='60%'>{GLib.markup_escape_text(msg)}…</span>")
+
+        def done(res):
+            if isinstance(res, Exception):
+                core.notify("Sonido", str(res))
+            if self.win.get_visible() and self.mode == "audio":
+                self.update()
+        run_bg(fn, done)
+        return False
+
+    def mode_audio(self, q):
+        missing = audio.available()
+        if missing:
+            return self.render([], f"<b>Sonido</b>\n<span alpha='60%'>{missing}</span>")
+        self.async_mode("audio", audio.state, lambda st: self._show_audio(q, st), "Leyendo el audio…")
+
+    def _show_audio(self, q, st):
+        if isinstance(st, Exception):
+            return self.render([], f"No pude leer el audio: {GLib.markup_escape_text(str(st))}")
+        e = GLib.markup_escape_text
+        out = next((o for o in st["outs"] if o["default"]), None)
+        mic = next((m for m in st["mics"] if m["default"]), None)
+        lines = []
+        if out:
+            bits = [f"{out['volume']} %" if not out["muted"] else "<span foreground='#FF9AA2'>silenciado</span>"]
+            if out.get("bt"):
+                bits.append(f"{out['bt']['kind'].lower()} · {e(out['bt']['codec'])}")
+            bits.append("suena " + e(", ".join(out["apps"])) if out["apps"] else "nada sonando")
+            lines.append(f"<span size='large' weight='bold'>󰕾  {e(out['name'])}</span>   "
+                         f"<span alpha='60%'>{'  ·  '.join(bits)}</span>")
+        if mic:
+            bits = [f"{mic['volume']} %" if not mic["muted"] else "<span foreground='#FF9AA2'>silenciado</span>",
+                    "lo usa " + e(", ".join(mic["apps"])) if mic["apps"] else "nadie lo está usando"]
+            lines.append(f"<span weight='bold'>󰍬  {e(mic['name'])}</span>   "
+                         f"<span alpha='60%'>{'  ·  '.join(bits)}</span>")
+        card = "\n".join(lines) or "<span alpha='60%'>No encontré placas de sonido.</span>"
+        do = self._audio_do
+
+        def out_icon(o):
+            n = o["name"].lower()
+            return ("bluetooth" if o.get("bt") else "audio-headphones" if "auricular" in n
+                    else "video-display" if "monitor" in n else "audio-speakers")
+        items = []
+        for o in st["outs"]:
+            if o["default"]:
+                sub = "✓ en uso" + (f" · suenan {', '.join(o['apps'])}" if o["apps"] else "")
+            else:
+                sub = "↵ usar esta salida" + ("" if o["in_profile"] else " (cambia el perfil de la placa)")
+            items.append(Item(o["name"], sub, out_icon(o),
+                              lambda o=o: do(lambda: audio.use("sink", o), f"Pasando el sonido a {o['name']}"),
+                              "Salida · por dónde suena", close=False))
+        for m in st["mics"]:
+            if m["default"]:
+                sub = "✓ en uso" + (f" · lo usa {', '.join(m['apps'])}" if m["apps"] else "")
+            elif m.get("bt") and m["bt"]["kind"] == "Música":
+                sub = "↵ usar · los auriculares pasan a modo llamada (baja la calidad)"
+            else:
+                sub = "↵ usar este micrófono"
+            items.append(Item(m["name"], sub, "audio-input-microphone",
+                              lambda m=m: do(lambda: audio.use("source", m), f"Cambiando a {m['name']}"),
+                              "Micrófono", close=False))
+        for b in st["bt"]:
+            for p in sorted(b["profiles"], key=lambda p: (p["kind"] != "Música",
+                                                          self.BT_CODECS.get(p["codec"], (9, ""))[0])):
+                why = self.BT_CODECS.get(p["codec"], (9, ""))[1]
+                items.append(Item(f"{p['kind']} · {p['codec']}", ("✓ en uso · " if p["active"] else "") + why,
+                                  "bluetooth", lambda b=b, p=p: do(lambda: audio.bt_profile(b["card"], p["profile"]),
+                                                                 f"Cambiando a {p['codec']}"),
+                                  f"Bluetooth · {b['name']} · codec", close=False))
+        items += [
+            Item("Subir volumen", "Ctrl++", "audio-volume-high", lambda: do(lambda: audio.volume(5)),
+                 "Volumen", close=False),
+            Item("Bajar volumen", "Ctrl+-", "audio-volume-low", lambda: do(lambda: audio.volume(-5)),
+                 "Volumen", close=False),
+            Item("Activar el sonido" if out and out["muted"] else "Silenciar la salida", "Ctrl+M",
+                 "audio-volume-muted", lambda: do(lambda: audio.mute("sink")), "Volumen", close=False),
+            Item("Activar el micrófono" if mic and mic["muted"] else "Silenciar el micrófono", "Ctrl+Espacio",
+                 "microphone-sensitivity-muted", lambda: do(lambda: audio.mute("source")), "Volumen",
+                 close=False),
+        ]
+        if shutil_which("pavucontrol"):
+            items.append(Item("Mezclador completo", "pavucontrol: volumen por app y más", "multimedia-volume-control",
+                              lambda: core.spawn(["pavucontrol"]), "Más"))
+        ql = q.lower()
+        if ql:
+            items = [it for it in items if ql in f"{it.title} {it.sub} {it.section}".lower()]
+        sel = self.listbox.get_selected_row()
+        idx = sel.get_index() if sel else 0
+        self.render(items, card, "↵ usar · Ctrl+± volumen · Ctrl+M silenciar · Ctrl+Espacio mic · Esc cerrar")
+        row = self.listbox.get_row_at_index(min(idx, max(len(items) - 1, 0)))
+        if row:
+            self.listbox.select_row(row)
 
     # ── notificaciones (dunst) ───────────────────────────────────────
     def mode_notifs(self, q):
