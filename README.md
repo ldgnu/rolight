@@ -22,7 +22,7 @@ todo desde una sola caja y sin sacar las manos del teclado.
 - **Instantáneo.** Queda residente y se muestra/oculta por D-Bus: no hay arranque en frío cada vez que lo abrís.
 - **Liviano.** Python + GTK3, sin Electron ni servicios extra. Los modos pesados (clima, Wi-Fi, archivos)
   corren en segundo plano y nunca congelan la interfaz.
-- **Todo en un lugar.** 19 modos con atajo de una letra. Escribís y los resultados se actualizan al vuelo.
+- **Todo en un lugar.** 20 modos con atajo de una letra. Escribís y los resultados se actualizan al vuelo.
 - **Sin compilar.** Son scripts: cloná, instalá las dependencias y listo.
 
 ## Capturas
@@ -66,13 +66,14 @@ Escribí la letra + espacio (o `Alt+letra`). Con la búsqueda vacía, `Backspace
 | `k` | Bitwarden | Buscar y copiar contraseñas | `rbw` |
 | `i` | Sistema | CPU, memoria, temperatura, disco, batería, procesos | `btop` (opcional) |
 | `u` | Música | Radios (Radio Browser) y YouTube (`yt …`), con estado en vivo, pausa y lista | [`minitone`](https://github.com/ldgnu/minitone), `mpv` |
+| `n` | Notificaciones | Historial de dunst (nuevas arriba), silenciar, no molestar 1 h, limpiar | `dunst` |
 
 Cada modo solo usa su herramienta si la tenés: si falta, ese modo no anda, pero el resto sí.
 
 La tabla de arriba es de la **versión GTK** (Wayland). En la **versión rofi** (X11)
 llegan escribiendo letra + espacio: Portapapeles, Bluetooth, Wi-Fi, VPN, Bitwarden,
 Sesiones IA y Sistema. Las que no existen ahí son **Monitores** y **Acciones**
-(volumen, brillo, capturas), porque dependen de `swaymsg`/`kanshi`, y **Música**, que por ahora es solo GTK. Está detallado
+(volumen, brillo, capturas), porque dependen de `swaymsg`/`kanshi`, y **Música** y **Notificaciones**, que por ahora son solo GTK. Está detallado
 en la [sección de i3](#configuración-por-window-manager).
 
 ---
@@ -365,6 +366,29 @@ Historial y caché: `~/.cache/rolight/` · Log: `~/.cache/rolight/rolight.log`
 ## Licencia
 
 [MIT](LICENSE) © Javi Solis
+
+## Notificaciones
+
+El modo `n` (o `notificaciones …`, `dunst …`) muestra el historial de dunst con las
+**nuevas arriba**: `↵` copia el texto (útil cuando un aviso trae un comando o un error),
+`Ctrl+↵` lo borra. Arriba están silenciar/activar, **no molestar 1 hora** (se activan
+solas después) y limpiar el historial. Entrar al modo marca todo como visto.
+
+`notifs.py` también alimenta una campanita para waybar (tenue sin nuevas, con número,
+roja si alguna es crítica, tachada en silencio):
+
+```jsonc
+"custom/notifs": {
+  "exec": "~/.config/rolight/notifs.py waybar", "return-type": "json",
+  "interval": 5, "signal": 9, "escape": false,
+  "on-click": "~/.config/rolight/rolight notifs",
+  "on-click-right": "~/.config/rolight/notifs.py mute",
+  "on-click-middle": "~/.config/rolight/notifs.py seen"
+}
+```
+
+Para que se actualice al instante, que dunst corra `pkill -RTMIN+9 -x waybar` con cada
+notificación (una regla con `summary = "*"` y `script = …`).
 
 ## Música con minitone
 

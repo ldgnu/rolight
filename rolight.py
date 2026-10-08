@@ -33,8 +33,10 @@ os.environ["PATH"] = os.pathsep.join([os.path.expanduser("~/.local/bin"), os.pat
                                       os.environ.get("PATH", "")])
 import core  # noqa: E402
 import music  # noqa: E402
+import notifs  # noqa: E402
 
 APP_ID = "io.github.ldgnu.Rolight"
+HERE = os.path.dirname(os.path.abspath(__file__))
 WIDTH = 720
 CLIP_DIR = os.path.join(core.CACHE, "clip")
 AI_SYSTEM = "Respondé en español rioplatense, breve y directo. Sin preámbulos."
@@ -60,6 +62,7 @@ MODES = [
     ("k", "bw", "Bitwarden", "dialog-password"),
     ("i", "stats", "Sistema", "utilities-system-monitor"),
     ("u", "music", "Música", "audio-x-generic"),
+    ("n", "notifs", "Notificaciones", "preferences-system-notifications"),
 ]
 STAT_WORDS = ("cpu", "mem", "memoria", "ram", "temp", "temperatura", "disco", "disk", "bateria", "batería",
               "battery", "sistema", "stats", "procesos", "proc", "ventilador", "fan", "swap", "carga")
@@ -102,9 +105,9 @@ ACTIONS = [
     ("Subir brillo", "brillo pantalla luz", "display-brightness-high", "brightnessctl s 10%+", "Sistema", True),
     ("Bajar brillo", "brillo pantalla luz", "display-brightness-low", "brightnessctl s 10%-", "Sistema", True),
     ("Historial de notificaciones", "notificaciones dunst historial", "preferences-system-notifications",
-     "$HOME/.scripts/dunst-history.sh history", "Sistema", False),
+     f"{HERE}/rolight notifs", "Sistema", False),
     ("Silenciar / activar notificaciones", "notificaciones dunst no molestar mute", "notifications-disabled",
-     "$HOME/.scripts/dunst-history.sh mute", "Sistema", False),
+     f"{HERE}/notifs.py mute", "Sistema", True),
     ("Bloquear pantalla", "bloquear lock swaylock", "system-lock-screen",
      f"if [ -f {json.dumps(LOCK_IMG)} ]; then swaylock -c 000000 -i {json.dumps(LOCK_IMG)}; "
      "else swaylock -f -c 000000; fi", "Sistema", False),
@@ -134,7 +137,8 @@ WORD_MODES = {"clima": "weather", "tiempo": "weather", "hora": "time", "ssh": "s
               "vpn": "vpn", "wireguard": "vpn", "wifi": "wifi", "bt": "bt",
               "bluetooth": "bt", "monitor": "monitor", "monitores": "monitor",
               "music": "music", "musica": "music", "música": "music", "radio": "music",
-              "minitone": "music", "buscar": "files", "archivos": "files", "archivo": "files"}
+              "minitone": "music", "notif": "notifs", "notificaciones": "notifs", "dunst": "notifs",
+              "buscar": "files", "archivos": "files", "archivo": "files"}
 # palabras que, escritas en la búsqueda general, sugieren entrar al modo
 MODE_HINTS = {"clip": "portapapeles clipboard copiar", "files": "archivos files",
               "vpn": "vpn wireguard openvpn", "wifi": "wifi red wireless internet",
@@ -143,7 +147,8 @@ MODE_HINTS = {"clip": "portapapeles clipboard copiar", "files": "archivos files"
               "ssh": "ssh servidor", "rdp": "rdp remmina escritorio remoto",
               "bw": "bitwarden contraseñas password claves usuario",
               "sessions": "sesiones claude opencode hermes agentes retomar",
-              "music": "music musica música radio minitone reproducir escuchar jazz"}
+              "music": "music musica música radio minitone reproducir escuchar jazz",
+              "notifs": "notificaciones notifications avisos alertas dunst silenciar molestar"}
 KANSHI_CONFIG = os.path.expanduser("~/.config/kanshi/config")
 MONITOR_SCRIPTS = os.path.expanduser("~/.config/sway/scripts")
 
@@ -656,6 +661,7 @@ class Rolight:
         self._stats_timer = None
         self._music_timer = None
         self.music_cache = {}
+        self.notif_seen = None
         self.pix_cache = {}
         self.ai_answer = ""
         self.ai_session = None
@@ -914,6 +920,7 @@ class Rolight:
 
     def reset(self):
         self.mode, self.confirm, self.ai_answer = None, None, ""
+        self.notif_seen = None
         self._mute = True
         self.entry.set_text("")
         self._mute = False
@@ -1036,6 +1043,7 @@ class Rolight:
             "actions": "Teclado, captura, volumen, wallpaper, tema…",
             "bw": "Buscar en Bitwarden",
             "stats": "Filtrar procesos…",
+            "notifs": "Buscar en las notificaciones",
             "music": "Radio o género (jazz, tango…) · «yt …» busca en YouTube",
         }[self.mode]
 
@@ -1712,6 +1720,70 @@ class Rolight:
         self.render(items, f"<span alpha='60%'>Activos:</span> {GLib.markup_escape_text(active)}",
                     "↵ aplicar perfil · ⌫ salir")
 
+
+    # ── notificaciones (dunst) ───────────────────────────────────────
+    def mode_notifs(self, q):
+        missing = notifs.available()
+        if missing:
+            return self.render([], f"<b>Notificaciones</b>\n<span alpha='60%'>{missing}</span>")
+        hist = notifs.history()
+        if self.notif_seen is None:  # al entrar: lo que había sin ver queda arriba y se marca visto
+            self.notif_seen = notifs.seen_id()
+            notifs.mark_seen(hist)
+        e = GLib.markup_escape_text
+        muted, until = notifs.paused(), notifs.dnd_until()
+        new = [n for n in hist if n["id"] > self.notif_seen]
+        if muted:
+            w = notifs.waiting()
+            card = ("<span size='large' weight='bold'>󰂛  Silenciadas</span>"
+                    + (f"  <span alpha='60%'>hasta las {time.strftime('%H:%M', time.localtime(until))}</span>"
+                       if until else "")
+                    + (f"\n<span alpha='60%'>{w} esperando: aparecen al activarlas</span>" if w else ""))
+        else:
+            card = (f"<span size='large' weight='bold'>󰂚  Activas</span>   <span alpha='60%'>"
+                    f"{len(new) or 'ninguna'} nueva{'s' if len(new) != 1 else ''} · {len(hist)} en el historial</span>")
+        redo = lambda fn: (lambda: (fn(), self.update(), False)[-1])  # noqa: E731
+        items = []
+        if not q:
+            items.append(Item("Activar notificaciones" if muted else "Silenciar notificaciones",
+                              "click derecho en la campanita también", "preferences-system-notifications"
+                              if muted else "notifications-disabled",
+                              redo(notifs.toggle_mute), "Estado", close=False))
+            if not muted:
+                items.append(Item("No molestar 1 hora", "se activan solas después", "notifications-disabled",
+                                  redo(lambda: notifs.dnd(60)), "Estado", close=False))
+            if hist:
+                items.append(Item("Limpiar historial", f"borra las {len(hist)}", "user-trash",
+                                  self._notifs_clear_confirm, "Estado", close=False))
+        ql = q.lower()
+        for n in hist:
+            text = f"{n['summary']} {n['body']} {n['app']}".lower()
+            if ql and ql not in text:
+                continue
+            icon = n["icon"] if n["icon"].startswith("/") and os.path.exists(n["icon"]) else (
+                "dialog-error" if n["urgency"] == "critical" else "preferences-system-notifications")
+            body = " ".join(n["body"].split())
+            sub = " · ".join(b for b in (n["app"] if n["app"] != "notify-send" else "",
+                                         notifs.ago(n["age"]), body) if b)
+            full = f"{n['summary']}\n{n['body']}".strip()
+            items.append(Item(n["summary"] or n["app"] or "(sin título)", sub, icon,
+                              lambda t=full: core.copy(t),
+                              "Nuevas" if n["id"] > self.notif_seen else "Anteriores",
+                              alt=redo(lambda i=n["id"]: notifs.remove(i))))
+            if len(items) >= 80:
+                break
+        if not hist:
+            card += "\n<span alpha='60%'>No hay nada en el historial.</span>"
+        self.render(items, card, "↵ copiar el texto · Ctrl+↵ borrar del historial · ⌫ salir · Esc cerrar")
+
+    def _notifs_clear_confirm(self):
+        self.confirm = ("¿Borrar <b>todo</b> el historial de notificaciones?", [
+            Item("Sí, limpiar", "dunstctl history-clear", "user-trash",
+                 lambda: (notifs.clear(), self._cancel_confirm(), False)[-1], close=False),
+            Item("Cancelar", "", "dialog-cancel", self._cancel_confirm, close=False),
+        ])
+        self.update()
+        return False
 
     # ── música (minitone) ────────────────────────────────────────────
     MUSIC_GENRES = ("jazz", "lofi", "tango", "rock nacional", "folklore", "clásica", "blues", "ambient")

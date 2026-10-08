@@ -8,7 +8,8 @@ rolight es un launcher para tiling WMs, en **dos interfaces** que comparten lóg
 
 | Archivo | Qué es | Se usa en |
 | --- | --- | --- |
-| `rolight.py` | GTK3 + `gtk-layer-shell`. Interfaz principal, 19 modos. | sway, Hyprland, river, niri, labwc |
+| `rolight.py` | GTK3 + `gtk-layer-shell`. Interfaz principal, 20 modos. | sway, Hyprland, river, niri, labwc |
+| `notifs.py` | Modo Notificaciones (solo GTK): historial de dunst + campanita de waybar. También CLI | versión GTK, waybar |
 | `music.py` | Modo Música (solo GTK): minitone como motor, mpv por IPC. También CLI | versión GTK, terminal |
 | `core.py` | Lógica compartida **y** script de modo de rofi | las dos |
 | `rolight` | Lanzador de la versión GTK (D-Bus + daemon) | sway, Hyprland |
