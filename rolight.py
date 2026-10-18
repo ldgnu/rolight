@@ -47,6 +47,12 @@ MODES = [
     ("a", "ai", "IA", "help-about"),
     ("e", "sessions", "Sesiones IA", "document-open-recent"),
     ("=", "calc", "Calcular", "accessories-calculator"),
+    ("d", "dolar", "Dólar", "money"),
+    ("l", "mercado", "Mercado", "shopping"),
+    ("y", "video", "Video", "video-x-generic"),
+    ("o", "paquetes", "Paquetes", "system-software-install"),
+    ("n", "overseerr", "Pedir Peli", "video"),
+    ("k", "recetas", "Recetas Keto", "restaurant"),
     ("s", "ssh", "SSH", "utilities-terminal"),
     ("r", "rdp", "Remoto", "org.remmina.Remmina"),
     ("v", "vpn", "VPN", "network-vpn"),
@@ -57,9 +63,11 @@ MODES = [
     ("h", "time", "Hora", "preferences-system-time"),
     ("p", "power", "Energía", "system-shutdown"),
     ("x", "actions", "Acciones", "system-run"),
-    ("k", "bw", "Bitwarden", "dialog-password"),
+    ("q", "bw", "Bitwarden", "dialog-password"),
     ("i", "stats", "Sistema", "utilities-system-monitor"),
     ("u", "music", "Música", "audio-x-generic"),
+    ("j", "dentro", "Contenido", "edit-find"),
+    ("z", "reproductor", "Reproductor", "multimedia-player"),
 ]
 STAT_WORDS = ("cpu", "mem", "memoria", "ram", "temp", "temperatura", "disco", "disk", "bateria", "batería",
               "battery", "sistema", "stats", "procesos", "proc", "ventilador", "fan", "swap", "carga")
@@ -95,6 +103,8 @@ ACTIONS = [
      "pactl set-source-mute @DEFAULT_SOURCE@ toggle", "Audio", True),
     ("Mezclador de audio", "volumen audio mixer pulsemixer", "multimedia-volume-control",
      "kitty --class rolight-ai --title Audio pulsemixer", "Audio", False),
+    ("Mezclador de audio (pavucontrol)", "volumen audio pulse pavucontrol mixer", "multimedia-volume-control",
+     "pavucontrol", "Audio", False),
     ("Play / Pausa", "musica media play pausa reproducir", "media-playback-start",
      "playerctl play-pause", "Medios", True),
     ("Siguiente tema", "musica media siguiente next", "media-skip-forward", "playerctl next", "Medios", True),
@@ -134,16 +144,117 @@ WORD_MODES = {"clima": "weather", "tiempo": "weather", "hora": "time", "ssh": "s
               "vpn": "vpn", "wireguard": "vpn", "wifi": "wifi", "bt": "bt",
               "bluetooth": "bt", "monitor": "monitor", "monitores": "monitor",
               "music": "music", "musica": "music", "música": "music", "radio": "music",
-              "minitone": "music", "buscar": "files", "archivos": "files", "archivo": "files"}
-# palabras que, escritas en la búsqueda general, sugieren entrar al modo
-MODE_HINTS = {"clip": "portapapeles clipboard copiar", "files": "archivos files",
-              "vpn": "vpn wireguard openvpn", "wifi": "wifi red wireless internet",
-              "bt": "bluetooth auriculares mouse", "monitor": "monitores pantallas displays kanshi",
-              "weather": "clima tiempo", "power": "energia apagar reiniciar",
-              "ssh": "ssh servidor", "rdp": "rdp remmina escritorio remoto",
-              "bw": "bitwarden contraseñas password claves usuario",
-              "sessions": "sesiones claude opencode hermes agentes retomar",
-              "music": "music musica música radio minitone reproducir escuchar jazz"}
+              "minitone": "music", "buscar": "files", "archivos": "files", "archivo": "files",
+               "dolar": "dolar", "cotizacion": "dolar", "cotización": "dolar", "peso": "dolar",
+               "ml": "mercado", "mercadolibre": "mercado", "comprar": "mercado", "compras": "mercado",
+               "youtube": "video", "video": "video", "yt": "video", "mpv": "video",
+               "paquete": "paquetes", "paquetes": "paquetes", "apt": "paquetes", "pacman": "paquetes",
+               "aur": "paquetes", "instalar": "paquetes",
+               "pelicula": "overseerr", "peli": "overseerr", "overseerr": "overseerr", "request": "overseerr", "cine": "overseerr",
+               "dentro": "dentro", "contenido": "dentro", "texto": "dentro", "grep": "dentro", "rg": "dentro",
+               "reproductor": "reproductor", "player": "reproductor", "mpris": "reproductor",
+               "reproductores": "reproductor", "players": "reproductor"}
+# palabras que, escritas en la búsqueda general, sugieren entrar al modo.
+# La clave SIEMPRE es el id de modo (está en MODE_BY_ID); el valor son las
+# palabras que, al escribirlas, sugieren ese modo.
+MODE_HINTS = {
+    "clip": "clip portapapeles copiar",
+    "files": "archivos files buscar",
+    "vpn": "vpn wireguard openvpn",
+    "wifi": "wifi red wireless internet",
+    "bt": "bluetooth auriculares mouse",
+    "monitor": "monitores pantallas displays kanshi",
+    "weather": "clima tiempo",
+    "power": "energia apagar reiniciar power",
+    "ssh": "ssh servidor",
+    "rdp": "rdp remmina escritorio remoto",
+    "bw": "bitwarden contraseñas password claves usuario clave",
+    "sessions": "sesiones claude opencode hermes agentes retomar",
+    "dolar": "dolar peso cotizacion blue mep ccl",
+    "mercado": "ml mercadolibre comprar compras producto",
+    "video": "youtube video yt mpv",
+    "paquetes": "apt pacman aur instalar paquete search",
+    "overseerr": "pelicula movie request overseerr pedir peli cine",
+    "recetas": "keto receta recetas dieta comida",
+    "actions": "acciones accion",
+    "stats": "stats sistema",
+    "music": "music musica música radio minitone reproducir escuchar jazz",
+    "dentro": "contenido texto dentro grep buscar dentro archivo",
+    "reproductor": "reproductor player mpris musica escolher monitor",
+}
+
+# modo -> palabra disparadora (para la ayuda ?)
+MODE_WORD = {}
+for _w, _m in WORD_MODES.items():
+    MODE_WORD.setdefault(_m, _w)
+
+# Recetas keto con ingredientes argentinos (dataset local, offline).
+KETO_RECIPES = [
+    {"name": "Huevos revueltos con palta y queso crema", "cat": "desayuno",
+     "ing": ["3 huevos", "1 palta", "1 cda aceite", "sal y pimienta", "50 g queso crema", "perejil"],
+     "steps": ["Cortá la palta en cubos. Batí los huevos con sal y pimienta.",
+               "Calentá el aceite en una sartén a fuego bajo y volcá los huevos, revolviendo hasta que cuajen.",
+               "Serví con la palta por encima y el queso crema; espolvoreá perejil."]},
+    {"name": "Tortilla de jamón y queso (frittata)", "cat": "desayuno",
+     "ing": ["4 huevos", "100 g queso rallado (pategrás)", "100 g jamón cocido en cubos", "sal", "aceite"],
+     "steps": ["Batí los huevos con sal; mezclalos con el jamón y el queso.",
+               "Calentá una sartén con un hilo de aceite y volcá la mezcla.",
+               "Llevá al horno medio hasta que firme (15-20 min). Cortá en porciones."]},
+    {"name": "Yogur griego con frutos secos y frutos rojos", "cat": "desayuno",
+     "ing": ["200 g yogur griego", "30 g mix de frutos secos", "50 g frutos rojos (arándanos/frutillas)", "stevia a gusto"],
+     "steps": ["Serví el yogur en un bowl.",
+               "Agregá los frutos secos y los frutos rojos.",
+               "Opcional: un toque de stevia si lo querés dulce."]},
+    {"name": "Milanesa de pollo con ensalada de repollo", "cat": "almuerzo",
+     "ing": ["2 filetes de pollo", "1 huevo", "queso rallado", "perejil", "repollo blanco", "aceite", "limón", "sal"],
+     "steps": ["Pasá el pollo por huevo batido mezclado con queso rallado y perejil.",
+               "Freí en aceite caliente hasta dorar.",
+               "Cortá el repollo bien fino y aliñalo con limón, aceite y sal. Serví junto a la milanesa."]},
+    {"name": "Carne asada con chimichurri y ensalada", "cat": "almuerzo",
+     "ing": ["1 bistec o entraña", "chimichurri (perejil, ajo, aceite, vinagre, sal)",
+              "lechuga", "tomate", "aceitunas", "cebolla"],
+     "steps": ["Sellá la carne a la plancha o parrilla al punto que gustes.",
+               "Mezclá lechuga, tomate, aceitunas y cebolla.",
+               "Aliñá la ensalada con chimichurri."]},
+    {"name": "Pollo a la plancha con brócoli salteado", "cat": "almuerzo",
+     "ing": ["2 pechugas de pollo", "1 brócoli", "aceite", "ajo", "sal", "pimienta"],
+     "steps": ["Salpimentá el pollo y sellalo a la plancha.",
+               "Cortá el brócoli en ramitos y saltealo en aceite con ajo.",
+               "Serví el pollo con el brócoli al lado."]},
+    {"name": "Ensalada de atún con huevo y aceitunas", "cat": "almuerzo",
+     "ing": ["1 lata de atún", "2 huevos duros", "aceitunas", "cebolla", "aceite", "limón"],
+     "steps": ["Herví los huevos 10 min, pelalos y picálos.",
+               "Mezclá el atún, el huevo, las aceitunas y la cebolla.",
+               "Aliñá con aceite y limón."]},
+    {"name": "Palta rellena con atún", "cat": "merienda",
+     "ing": ["1 palta", "1 lata de atún", "1 cda mayonesa", "limón", "sal"],
+     "steps": ["Partí la palta al medio y sacale el pozo.",
+               "Mezclá el atún con mayonesa y unas gotas de limón.",
+               "Rellená la palta y listo."]},
+    {"name": "Huevo duro con aceitunas y queso", "cat": "merienda",
+     "ing": ["2 huevos", "aceitunas", "50 g queso (pategrás o azul)", "sal"],
+     "steps": ["Herví los huevos 10 min y partilos al medio.",
+               "Serví junto a las aceitunas y el queso en cubos."]},
+    {"name": "Mix de frutos secos", "cat": "merienda",
+     "ing": ["almendras", "nueces", "maní sin azúcar", "semillas de girasol"],
+     "steps": ["Serví un puñado (30-40 g) de frutos secos mezclados.",
+               "Ideal para picar sin subir la glucosa."]},
+    {"name": "Bondiola o roast beef con verduras al horno", "cat": "cena",
+     "ing": ["500 g bondiola o roast beef", "zapallo", "zucchini", "pimiento", "aceite", "romero", "sal"],
+     "steps": ["Sellá la carne en una sartén.",
+               "Cortá las verduras, rociálas con aceite y romero.",
+               "Horneá carne y verduras a 200°C unos 40 min. Serví todo junto."]},
+    {"name": "Pescado al horno con limón", "cat": "cena",
+     "ing": ["2 filetes de pescado (mero o tilapia)", "limón", "aceite", "ajo", "sal"],
+     "steps": ["Colocá el pescado en una fuente.",
+               "Rociá con aceite, ajo picado y jugo de limón.",
+               "Horneá a 180°C 20 min hasta que se desmenuce fácil."]},
+    {"name": "Tortilla de vegetales", "cat": "cena",
+     "ing": ["4 huevos", "zapallo cocido", "espinaca", "queso rallado", "sal"],
+     "steps": ["Salteá el zapallo y la espinaca.",
+               "Volcá los huevos batidos con el queso sobre los vegetales en una sartén.",
+               "Llevá al horno hasta que firme y serví."]},
+]
 KANSHI_CONFIG = os.path.expanduser("~/.config/kanshi/config")
 MONITOR_SCRIPTS = os.path.expanduser("~/.config/sway/scripts")
 
@@ -261,10 +372,6 @@ def clip_select(index, paste=False):
 # ── Wi-Fi / Bluetooth / VPN / Monitores ──────────────────────────────
 def sh(cmd, timeout=10):
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
-
-
-def nm_split(line):
-    return [p.replace("\\:", ":") for p in re.split(r"(?<!\\):", line)]
 
 
 def wifi_scan(rescan=False):
@@ -391,11 +498,6 @@ def kanshi_profiles():
     return out
 
 
-def kanshi_transform(t):
-    """Pasa una rotación entre el sentido de kanshi y el de sway (90 ↔ 270, simétrico)."""
-    return re.sub(r"(flipped-)?\b(90|270)\b", lambda m: f"{m[1] or ''}{'270' if m[2] == '90' else '90'}", t)
-
-
 def apply_kanshi(outputs):
     """Aplica las líneas `output ...` de un perfil kanshi con swaymsg."""
     connected = {o["name"] for o in json.loads(sh(["swaymsg", "-t", "get_outputs"], 3))}
@@ -414,7 +516,7 @@ def apply_kanshi(outputs):
     for name in connected - listed:
         cmds.append(f"output {name} disable")
     # primero se prenden y después se apagan, así nunca queda todo apagado
-    cmds.sort(key=lambda c: c.endswith("disable") or " disable " in c)
+    cmds.sort(key=lambda c: c.endswith("disable"))
     for c in cmds:
         subprocess.run(["swaymsg", c], capture_output=True, timeout=5)
 
@@ -443,14 +545,25 @@ def rbw_list():
     return sorted(out, key=lambda e: e["name"].lower())
 
 
+# Handle del timer de borrado del último secreto copiado: si copias otro
+# antes de que venza, se cancela el anterior en vez de apilar varios.
+_secret_clear_timer = None
+
+
 def copy_secret(text):
     """Copia sin que CopyQ lo guarde y lo borra a los 30 s si sigue ahí."""
+    global _secret_clear_timer
     p = subprocess.Popen(["copyq", "eval", "--",
                           'copy("x-kde-passwordManagerHint", "secret", "text/plain", input())'],
                          stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     p.communicate(text.encode(), timeout=5)
 
+    if _secret_clear_timer is not None:
+        GLib.source_remove(_secret_clear_timer)
+
     def clear():
+        global _secret_clear_timer
+        _secret_clear_timer = None
         try:
             cur = subprocess.run(["wl-paste", "-n"], capture_output=True, text=True, timeout=2).stdout
             if cur == text:
@@ -458,7 +571,7 @@ def copy_secret(text):
         except Exception:  # noqa: BLE001
             pass
         return False
-    GLib.timeout_add_seconds(CLIP_CLEAR_SECONDS, clear)
+    _secret_clear_timer = GLib.timeout_add_seconds(CLIP_CLEAR_SECONDS, clear)
 
 
 # ── Monitor del sistema ──────────────────────────────────────────────
@@ -652,10 +765,15 @@ class Rolight:
         self.weather_cache = {}
         self.sys_cache = {}
         self.remmina = sorted(core.remmina_profiles(), key=lambda r: r[0].lower())
+        # cacheado para no correr un subprocess por cada tecla en el modo SSH
+        self.ssh = core.ssh_hosts()
+        self.pm = core.detect_pm()
+        self.overseerr_url, self.overseerr_key = self._load_overseerr_conf()
         self.stats = Stats()
         self._stats_timer = None
         self._music_timer = None
         self.music_cache = {}
+        self._cache = {}
         self.pix_cache = {}
         self.ai_answer = ""
         self.ai_session = None
@@ -947,13 +1065,14 @@ class Rolight:
         self.confirm = None
         text = self.entry.get_text()
         if self.mode is None:
-            m = re.match(r"^([a-z=])\s(.*)$", text, re.S) or re.match(r"^([=/])(.*)$", text, re.S)
-            if m and (m.group(1) in MODE_BY_KEY or m.group(1) == "/"):
-                key = "f" if m.group(1) == "/" else m.group(1)
-                return self.set_mode(MODE_BY_KEY[key][1], m.group(2))
+            tl = text.strip().lower()
+            if tl in WORD_MODES:
+                return self.set_mode(WORD_MODES[tl], "")
             m = re.match(r"^(\w+)\s(.*)$", text)
             if m and m.group(1).lower() in WORD_MODES:
                 return self.set_mode(WORD_MODES[m.group(1).lower()], m.group(2))
+            if Rolight._dolar_convert_parse(text):
+                return self.set_mode("dolar", text)
         if self.mode == "ai":
             self.ai_answer = ""
         self.update()
@@ -985,11 +1104,6 @@ class Rolight:
             self.mode, self.confirm = None, None
             self.update()
             return True
-        if alt:
-            ch = chr(Gdk.keyval_to_unicode(k) or 0).lower()
-            if ch in MODE_BY_KEY:
-                self.set_mode(MODE_BY_KEY[ch][1])
-                return True
         return False
 
     def activate(self, it, alt):
@@ -1037,7 +1151,15 @@ class Rolight:
             "bw": "Buscar en Bitwarden",
             "stats": "Filtrar procesos…",
             "music": "Radio o género (jazz, tango…) · «yt …» busca en YouTube",
-        }[self.mode]
+            "dolar": "Cotizaciones del dólar en Argentina · «1000 pesos» o «100 dolar» convierte",
+            "mercado": "Escribí qué buscar en MercadoLibre…",
+            "video": "Escribí qué ver en YouTube (abre en mpv)…",
+            "paquetes": "Buscar paquete (arch/AUR/apt) · ↵ instalar · Ctrl+↵ copiar nombre",
+            "overseerr": "Buscar película/serie para pedir (Overseerr)…",
+            "recetas": "Recetas keto (desayuno/almuerzo/merienda/cena) · ↵ ver · escribí para filtrar",
+            "dentro": "Buscar texto DENTRO de tus archivos (ej. «dentro función»)",
+            "reproductor": "Elegir qué reproductor monitorea la barra · ↵ pausar/elegir",
+        }.get(self.mode, "")
 
     @staticmethod
     def greeting():
@@ -1078,7 +1200,7 @@ class Rolight:
                 s = 100
             elif any(w.startswith(ql) for w in re.split(r"[\s\-_.()]+", n)):
                 s = 80
-            elif ql in n:
+            elif len(ql) >= 3 and ql in n:
                 s = 60
             elif ql in kw.lower() or ql in sub.lower():
                 s = 30
@@ -1125,7 +1247,7 @@ class Rolight:
 
     def ssh_items(self, q, limit=20):
         ql = q.lower()
-        hosts = [h for h in core.ssh_hosts() if ql in h.lower()]
+        hosts = [h for h in self.ssh if ql in h.lower()]
         return [Item(h, "ssh · abrir en kitty", "utilities-terminal",
                      lambda h=h: core.run_ssh(h), "Servidores") for h in hosts[:limit]]
 
@@ -1155,12 +1277,16 @@ class Rolight:
 
     def calc_card(self, q):
         res = core.calc(q)
+        kind = "Calculadora"
+        if res is None:
+            res = core.convert_units(q)
+            kind = "Conversión"
         if res is None:
             return None, []
         card = (f"<span alpha='60%'>{GLib.markup_escape_text(q)} =</span>\n"
                 f"<span size='xx-large' weight='bold'>{GLib.markup_escape_text(res)}</span>")
         return card, [Item(f"= {res}", "↵ copiar resultado", "accessories-calculator",
-                           lambda: core.copy(res), "Calculadora")]
+                           lambda: core.copy(res), kind)]
 
     def file_items(self, paths, section="Archivos"):
         home = os.path.expanduser("~")
@@ -1221,11 +1347,16 @@ class Rolight:
     # ── modos ────────────────────────────────────────────────────────
     def mode_mixed(self, q):
         if not q:
-            return self.render([])
+            recents = self.app_items("")
+            if not recents:
+                recents = [Item("Sin historial reciente", "ejecutá algo y aparecerá acá",
+                                "history", None, "Recientes")]
+            return self.render(recents, None,
+                              "↵ abrir · lo más reciente que ejecutaste")
         if q.lower() in STAT_WORDS:
             return self.mode_stats("")
         if q == "?":
-            return self.render([Item(name, f"«{key}» + espacio  ·  Alt+{key}", icon,
+            return self.render([Item(name, f"escribí «{MODE_WORD.get(mid, mid)}»", icon,
                                      lambda m=mid: self.set_mode(m) or False, "Atajos", close=False)
                                 for key, mid, name, icon in MODES]
                                + [Item("Buscar archivos rápido", "«buscar» o «/» + nombre · «buscar img», «buscar pdf»… por tipo", "system-file-manager",
@@ -1239,9 +1370,11 @@ class Rolight:
         ql = q.lower()
         if len(ql) >= 2:
             for mid, words in MODE_HINTS.items():
+                if mid not in MODE_BY_ID:
+                    continue
                 key, _, name, icon = MODE_BY_ID[mid]
                 if any(w.startswith(ql) for w in words.split()):
-                    items.append(Item(name, f"modo · atajo «{key}» + espacio o Alt+{key}", icon,
+                    items.append(Item(name, f"modo · escribí «{MODE_WORD.get(mid, mid)}»", icon,
                                       lambda m=mid: self.set_mode(m) or False, "Modos", close=False))
         items += self.app_items(q)
         items += self.action_items(q, 5) if len(q) >= 3 else []
@@ -1250,13 +1383,72 @@ class Rolight:
         items += self.remmina_items(q, 5) if len(q) >= 2 else []
         if len(q) >= 3:
             items += self.clip_items(q, 3)
-        base = items + self.fallback_items(q)
+        base = items + (self.fallback_items(q) if not items else [])
         self.render(base, card)
         if len(q) >= 3:
             self.later(220, lambda gen: run_bg(
                 lambda: core.find_files(q), self.deliver(gen, lambda paths: self.render(
                     items + (self.file_items(paths[:6]) if isinstance(paths, list) else [])
-                    + self.fallback_items(q), card))))
+                    + (self.fallback_items(q)
+                       if not items and not (isinstance(paths, list) and paths) else []),
+                    card))))
+
+    def mode_dentro(self, q):
+        """Búsqueda de contenido con rg: texto dentro de los archivos."""
+        q = q.strip()
+        if not q:
+            return self.render([], "<span alpha='60%'>Escribí qué buscar dentro de tus archivos…</span>")
+        self.render([], f"<span alpha='60%'>Buscando «{GLib.markup_escape_text(q)}»…</span>")
+        self.later(180, lambda gen: run_bg(
+            lambda: core.search_content(q),
+            self.deliver(gen, lambda res: self._render_content(res, q))))
+
+    def _render_content(self, res, q):
+        if not res:
+            return self.render([], f"<span alpha='60%'>Sin coincidencias para «{GLib.markup_escape_text(q)}»</span>",
+                               "⌫ salir")
+        items = []
+        for path, line, txt in res:
+            name = os.path.basename(path) or path
+            sub = f"{path.rsplit('/', 1)[0].replace(os.path.expanduser('~'), '~', 1)}:{line}"
+            items.append(Item(f"{name}:{line}", f"{sub} · {txt[:70]}",
+                              "document-open-recent",
+                              lambda p=path: core.spawn(["xdg-open", p]),
+                              "En archivos", close=False))
+        self.render(items, None, "↵ abrir archivo · Ctrl+↵ copiar la línea")
+
+    def mode_reproductor(self, q):
+        """Selector de reproductor MPRIS: elegís cuál monitorea/pausa la barra."""
+        def show(res):
+            if isinstance(res, Exception):
+                return self.render([], f"Error leyendo reproductores: {GLib.markup_escape_text(str(res))}")
+            players = res if isinstance(res, list) else []
+            act = core.active_player()
+            if not players:
+                return self.render([], "<span alpha='60%'>No hay reproductores MPRIS activos</span>",
+                                   "los que no exponen MPRIS (mpv sin --script=mpris) no aparecen")
+            items = []
+            for p in players:
+                name = p["name"]
+                is_act = name == act
+                sub = " · ".join(filter(None, [
+                    "sonando" if p["status"] == "Playing" else "pausado",
+                    f"{p['artist']} - {p['title']}".strip(" -") or name]))
+                short = re.sub(r"\..*", "", name) or name
+                items.append(Item(("★ " if is_act else "") + short, sub,
+                                  "multimedia-player" if p["status"] == "Playing" else "media-playback-pause",
+                                  (lambda n=name: self._pick_player(n)), "Monitorizado" if is_act else "Reproductores"))
+            items.append(Item("Usar el de por defecto", "el primero que encuentre playerctl", "edit-clear",
+                              (lambda: self._pick_player("")), "Opciones", close=False))
+            self.render(items, None, "↵ elegir y pausar/reproducir · ★ = el que muestra la barra · ⌫ salir")
+        self.async_mode("reproductor", core.mpris_players, show, "Buscando reproductores…")
+
+    def _pick_player(self, name):
+        core.set_active_player(name)
+        if name:
+            core.control_player("play-pause", name)
+        self.update()
+        return False
 
     def mode_clip(self, q):
         items = self.clip_items(q)
@@ -1267,7 +1459,7 @@ class Rolight:
 
     def mode_ssh(self, q):
         items = self.ssh_items(q)
-        if q and q not in core.ssh_hosts():
+        if q and q not in self.ssh:
             items.insert(0, Item(f"Conectar a {q}", "ssh", "utilities-terminal",
                                  lambda: core.run_ssh(q), "Servidores"))
         self.render(items)
@@ -1380,6 +1572,261 @@ class Rolight:
         self.render([Item(f"{d}   {t}", f"{desc} · lluvia {rain}%", "weather-few-clouds", full, "Pronóstico")
                      for d, t, desc, rain in days], msg, "↵ pronóstico completo · ⌫ salir")
 
+    @staticmethod
+    def _dolar_convert_parse(q):
+        """«1000 pesos» / «100 dolar» → (monto, 'ars'|'usd'), o None."""
+        m = re.match(r"^\s*([\d.,]+)\s*(pesos?|argentinos?|ars|d[oó]lares?|usd|dolar)\s*$",
+                     q.strip().lower())
+        if not m:
+            return None
+        try:
+            amt = float(m.group(1).replace(",", "."))
+        except ValueError:
+            return None
+        word = m.group(2)
+        cur = "ars" if word in ("pesos", "peso", "argentinos", "argentino", "ars") else "usd"
+        return amt, cur
+
+    def mode_dolar(self, q=""):
+        conv = self._dolar_convert_parse(q)
+
+        def show(res):
+            if isinstance(res, Exception):
+                return self.render([], f"No pude obtener el dólar ({GLib.markup_escape_text(type(res).__name__)})")
+            if conv:
+                amt, cur = conv
+                items = []
+                for nombre, compra, venta, _f in res:
+                    if cur == "ars":
+                        usd = amt / venta if venta else 0
+                        sub = f"{amt:,.2f} ARS = {usd:,.2f} USD  ·  venta {venta:,.2f}"
+                        items.append(Item(nombre, sub, "money", lambda v=usd: core.copy(f"{v:,.2f}"),
+                                          "→ USD", alt=lambda v=usd: core.copy(f"{v:,.2f}")))
+                    else:
+                        ars = amt * compra if compra else 0
+                        sub = f"{amt:,.2f} USD = {ars:,.2f} ARS  ·  compra {compra:,.2f}"
+                        items.append(Item(nombre, sub, "money", lambda v=ars: core.copy(f"{v:,.2f}"),
+                                          "→ ARS", alt=lambda v=ars: core.copy(f"{v:,.2f}")))
+                if not items:
+                    return self.render([], "No hubo datos")
+                self.render(items, None, "↵ copiar resultado · ⌫ salir")
+                return
+            items = []
+            fechas = {f for _, _, _, f in res if f}
+            card = ""
+            if fechas:
+                card = f"<span alpha='60%'>Actualizado: {GLib.markup_escape_text(max(fechas)[:10])}</span>"
+            for nombre, compra, venta, _f in res:
+                sub = f"compra ${compra:,.2f}  ·  venta ${venta:,.2f}"
+                items.append(Item(nombre, sub, "money", lambda n=nombre: core.copy(n), "Dólar",
+                                  alt=lambda v=venta: core.copy(f"{v:,.2f}")))
+            if not items:
+                return self.render([], "No hubo datos")
+            self.render(items, card or None, "↵ copiar nombre · Ctrl+↵ copiar venta · ⌫ salir")
+        self.async_mode("dolar", core.dolar, show, "Consultando el dólar…")
+
+    def mode_mercado(self, q):
+        if not q:
+            return self.render([], "<span alpha='60%'>Escribí qué buscar en MercadoLibre…</span>")
+        # La API pública de ML ahora tira 403 desde muchos IPs; abrimos el listado directo.
+        url = f"https://listado.mercadolibre.com.ar/{urllib.parse.quote_plus(q)}"
+        self.render([Item(f"Buscar «{GLib.markup_escape_text(q)}» en MercadoLibre",
+                          "listado.mercadolibre.com.ar", "shopping",
+                          lambda u=url: core.open_url(u), "MercadoLibre")],
+                    None, "↵ abrir en navegador · ⌫ salir")
+
+    def mode_video(self, q):
+        if not q:
+            return self.render([], "<span alpha='60%'>Escribí qué ver en YouTube (abre en mpv)…</span>")
+        key = f"yt:{q.lower()}"
+        cached = self._cache.get(key)
+
+        def found(res):
+            if isinstance(res, list):
+                self._cache[key] = res
+            self._show_video(res)
+
+        if cached is not None:
+            self._show_video(cached)
+        else:
+            self.render([], "<span alpha='60%'>Buscando en YouTube…</span>")
+            gen = self.gen
+            self.later(350, lambda g: run_bg(lambda: core.youtube_search(q), self.deliver(gen, found)))
+
+    def _show_video(self, res):
+        if isinstance(res, Exception):
+            return self.render([], f"Error buscando en YouTube: {GLib.markup_escape_text(type(res).__name__)}")
+        items = [Item(t, u, "video-x-generic",
+                      lambda u=u: core.spawn(["mpv", "--no-terminal", u]), "YouTube")
+                 for t, u in res]
+        if not items:
+            return self.render([], "Sin resultados")
+        self.render(items, None, "↵ reproducir en mpv · ⌫ salir")
+
+    def mode_paquetes(self, q=""):
+        if not self.pm:
+            return self.render([], "No detecté un gestor de paquetes (pacman/apt/dnf…)")
+        if not q:
+            return self.render([], "<span alpha='60%'>Escribí el paquete a buscar…</span>")
+        key = f"pkg:{q.lower()}"
+
+        def found(res):
+            if isinstance(res, list):
+                self._cache[key] = res
+            self._show_paquetes(res)
+
+        cached = self._cache.get(key)
+        if cached is not None:
+            self._show_paquetes(cached)
+        else:
+            self.render([], "<span alpha='60%'>Buscando paquetes…</span>")
+            gen = self.gen
+            self.later(350, lambda g: run_bg(lambda: core.package_search(q, self.pm),
+                                             self.deliver(gen, found)))
+
+    def _show_paquetes(self, res):
+        if isinstance(res, Exception):
+            return self.render([], f"Error buscando paquetes: {GLib.markup_escape_text(type(res).__name__)}")
+        items = []
+        for p in res:
+            sub = " · ".join(filter(None, [p.get("repo", ""), p.get("ver", ""), p.get("desc", "")]))
+            items.append(Item(p["name"], sub, "system-software-install",
+                              lambda n=p["name"]: self._pkg_install(n), "Paquetes",
+                              alt=lambda n=p["name"]: core.copy(n)))
+        if not items:
+            return self.render([], "Sin resultados")
+        self.render(items, None, "↵ instalar en terminal · Ctrl+↵ copiar nombre · ⌫ salir")
+
+    def _pkg_install(self, name):
+        pm = self.pm or "pacman"
+        if pm == "apt":
+            cmd = ["sudo", "apt", "install", name]
+        elif pm in ("dnf", "zypper"):
+            cmd = ["sudo", pm, "install", name]
+        else:
+            cmd = ["sudo", pm, "-S", name]
+        core.spawn(core.TERMINAL + ["--class", "rolight-ai", "--title", f"Instalar {name}",
+                                   "--hold"] + cmd)
+
+    def _load_overseerr_conf(self):
+        url = os.environ.get("OVERSEERR_URL", "")
+        key = os.environ.get("OVERSEERR_KEY", "")
+        if not (url and key):
+            envp = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+            try:
+                for line in open(envp, encoding="utf-8"):
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    v = v.strip().strip('"').strip("'")
+                    if k.strip() == "OVERSEERR_URL" and not url:
+                        url = v
+                    elif k.strip() == "OVERSEERR_KEY" and not key:
+                        key = v
+            except OSError:
+                pass
+        return url, key
+
+    def mode_overseerr(self, q=""):
+        if not self.overseerr_url or not self.overseerr_key:
+            return self.render([], "Falta OVERSEERR_URL / OVERSEERR_KEY (ponelos en ~/.config/rolight/.env)")
+        if not q:
+            return self.render([], "<span alpha='60%'>Escribí qué querés pedir…</span>")
+        key = f"ov:{q.lower()}"
+
+        def found(res):
+            if isinstance(res, list):
+                self._cache[key] = res
+            self._show_overseerr(res)
+
+        cached = self._cache.get(key)
+        if cached is not None:
+            self._show_overseerr(cached)
+        else:
+            self.render([], "<span alpha='60%'>Buscando en Overseerr…</span>")
+            gen = self.gen
+            self.later(350, lambda g: run_bg(
+                lambda: core.overseerr_search(self.overseerr_url, self.overseerr_key, q),
+                self.deliver(gen, found)))
+
+    def _show_overseerr(self, res):
+        if isinstance(res, Exception):
+            if "403" in str(res):
+                return self.render([], "Overseerr: 403 · el API key no tiene permiso para buscar/pedir "
+                                       "(revisá el rol del key en Overseerr)")
+            return self.render([], f"Error con Overseerr: {GLib.markup_escape_text(type(res).__name__)}")
+        items = []
+        for it in res:
+            title = f"{it['title']} ({it['year']})" if it["year"] else it["title"]
+            sub = it["type"] or ""
+            items.append(Item(title, sub, "video", lambda i=it: self._overseerr_confirm(i), "Overseerr"))
+        if not items:
+            return self.render([], "Sin resultados")
+        self.render(items, None, "↵ pedir · ⌫ salir")
+
+    def _overseerr_confirm(self, it):
+        self.confirm = (f"¿Pedir «{GLib.markup_escape_text(it['title'])}»?",
+                        [Item(f"Sí, pedir {it['title']}", "", "dialog-ok",
+                              lambda: self._overseerr_request(it)),
+                         Item("Cancelar", "", "dialog-cancel", self._cancel_confirm, close=False)])
+        self.update()
+        return False
+
+    def _overseerr_request(self, it):
+        def go():
+            try:
+                core.overseerr_request(self.overseerr_url, self.overseerr_key, it["id"], it["type"])
+                core.notify("Pedido enviado", it["title"])
+            except Exception as e:  # noqa: BLE001
+                core.notify("Overseerr", f"Error: {e}")
+        self.confirm = None
+        self.render([], "<span alpha='60%'>Enviando pedido…</span>")
+        run_bg(go, lambda _: self.update())
+        return False
+
+    def mode_recetas(self, q=""):
+        cats = ["desayuno", "almuerzo", "merienda", "cena"]
+        ql = q.strip().lower()
+        if ql in cats:
+            return self._recetas_list(ql)
+        if not q:
+            items = [Item(c.capitalize(), "Recetas keto", "restaurant",
+                          lambda c=c: self._recetas_list(c), "Recetas Keto")
+                     for c in cats]
+            items.append(Item("Ver todas", "Todas las recetas", "restaurant",
+                              lambda: self._recetas_list(None), "Recetas Keto"))
+            return self.render(items, None, "↵ ver recetas · ⌫ salir")
+        res = [r for r in KETO_RECIPES
+               if ql in r["name"].lower() or any(ql in i.lower() for i in r["ing"])]
+        if not res:
+            return self.render([], f"<span alpha='60%'>Sin recetas para «{GLib.markup_escape_text(q)}»</span>")
+        self._recetas_list(None, res)
+
+    def _recetas_list(self, cat, res=None):
+        if res is None:
+            res = [r for r in KETO_RECIPES if r["cat"] == cat] if cat else KETO_RECIPES
+        items = [Item(r["name"], r["cat"].capitalize(), "restaurant",
+                      lambda r=r: self._recetas_detail(r), "Recetas Keto")
+                 for r in res]
+        self.render(items, None, "↵ ver receta · ⌫ volver · Esc cerrar")
+
+    def _recetas_detail(self, r):
+        ing = "".join(f"• {GLib.markup_escape_text(i)}\n" for i in r["ing"])
+        steps = "".join(f"{i+1}. {GLib.markup_escape_text(s)}\n" for i, s in enumerate(r["steps"]))
+        yt = "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus("keto " + r["name"])
+        full = (f"{r['name']}\n\nIngredientes:\n" + "\n".join(r["ing"]) +
+                "\n\nPasos:\n" + "\n".join(f"{i+1}. {s}" for i, s in enumerate(r["steps"])))
+        card = (f"<b>{GLib.markup_escape_text(r['name'])}</b>  <i>({r['cat']})</i>\n\n"
+                f"<b>Ingredientes</b>\n{ing}\n<b>Paso a paso</b>\n{steps}")
+        items = [
+            Item("Ver en YouTube", f"keto {r['name']}", "video-x-generic",
+                 lambda u=yt: core.open_url(u), "Recetas Keto"),
+            Item("Copiar receta", "ingredientes + pasos", "edit-copy",
+                 lambda t=full: core.copy(t), "Recetas Keto"),
+        ]
+        self.render(items, card, "↵ abrir YouTube · Ctrl+↵ copiar · ⌫ volver")
+
     def mode_time(self, q):
         msg = core.time_message(q)
         hhmm = re.search(r"\d\d:\d\d", msg)
@@ -1478,7 +1925,8 @@ class Rolight:
     def mode_stats(self, q, keep_sel=False):
         d = self.stats.snapshot()
         if not d["procs"]:  # primera lectura: sin delta todavía
-            d = (GLib.usleep(250000), self.stats.snapshot())[1]
+            GLib.usleep(250000)
+            d = self.stats.snapshot()
         ql = q.lower()
         items = []
         for cpu, mem, name, pid in d["procs"]:
@@ -1562,12 +2010,26 @@ class Rolight:
         def show(res):
             if isinstance(res, Exception):
                 return self.render([], f"Error leyendo Wi-Fi: {GLib.markup_escape_text(str(res))}")
-            radio, nets = res
+            radio, nets, lan = res
             ql = q.lower()
             items = []
+            # Sección LAN arriba: si estás por cable, mostrá los datos reales.
+            if lan:
+                bits = [b for b in (lan.get("ip"), lan.get("speed")) if b]
+                st = " · ".join(bits) or "conectado por cable"
+                items.append(Item(f"Cable (LAN) · {lan['iface']}", st, "network-wired",
+                                  lambda: core.spawn(["nm-connection-editor"]), "Red actual", close=False))
+                det = []
+                if lan.get("gw"):
+                    det.append(f"Gateway {lan['gw']}")
+                if lan.get("mac"):
+                    det.append(lan["mac"])
+                if det:
+                    items.append(Item("  detalles", " · ".join(det), "network-wired",
+                                      None, "Red actual", close=False))
             if radio != "enabled":
-                return self.render([Item("Encender Wi-Fi", "", "network-wireless",
-                                         self.bg_cmd(["nmcli", "radio", "wifi", "on"], "Wi-Fi encendido"))])
+                items.append(Item("Encender Wi-Fi", "", "network-wireless",
+                                  self.bg_cmd(["nmcli", "radio", "wifi", "on"], "Wi-Fi encendido")))
             for n in nets:
                 if ql and ql not in n["ssid"].lower():
                     continue
@@ -1595,11 +2057,19 @@ class Rolight:
                      lambda: core.spawn(["nm-connection-editor"]), "Opciones"),
             ]
             self.render(items, None, "↵ conectar/desconectar · redes nuevas piden clave en una terminal · ⌫ salir")
-        self.async_mode("wifi", wifi_scan, show, "Buscando redes…")
+
+        def load():
+            radio, nets = wifi_scan()
+            return radio, nets, core.lan_info()
+        self.async_mode("wifi", load, show, "Buscando redes…")
 
     def _wifi_rescan(self):
         self.sys_cache.pop("wifi", None)
-        self.async_mode("wifi", lambda: wifi_scan(True), lambda r: (self.sys_cache.__setitem__("wifi", r), self.update()),
+
+        def load():
+            radio, nets = wifi_scan(True)
+            return radio, nets, core.lan_info()
+        self.async_mode("wifi", load, lambda r: (self.sys_cache.__setitem__("wifi", r), self.update()),
                         "Escaneando…")
         return False
 

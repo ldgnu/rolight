@@ -243,6 +243,19 @@ def launch_app(did, path):
 
 
 # ── SSH / RDP ────────────────────────────────────────────────────────
+# ── Parseo de salida de NetworkManager / kanshi ─────────────────────
+# Viven acá (no en rolight.py) para poder testearlas sin cargar GTK.
+def nm_split(line):
+    """Separa una línea de nmcli por ':' sin romper los escapados con '\\:'."""
+    return [p.replace("\\:", ":") for p in re.split(r"(?<!\\):", line)]
+
+
+def kanshi_transform(t):
+    """Pasa una rotación entre el sentido de kanshi y el de sway (90 ↔ 270, simétrico)."""
+    return re.sub(r"(flipped-)?\b(90|270)\b",
+                  lambda m: f"{m[1] or ''}{'270' if m[2] == '90' else '90'}", t)
+
+
 def ssh_hosts():
     hosts = []
     try:
@@ -348,6 +361,222 @@ def calc(text):
     return str(v)
 
 
+# ── Conversión de unidades ────────────────────────────────────────────
+# Unidades lineales: factor a la unidad base de su categoría.
+_LINEAR_UNITS = {
+    # longitud (base metro)
+    "mm": 0.001, "cm": 0.01, "m": 1.0, "km": 1000.0,
+    "in": 0.0254, "ft": 0.3048, "yd": 0.9144, "mi": 1609.344,
+    # masa (base kilogramo)
+    "mg": 1e-6, "g": 0.001, "kg": 1.0, "t": 1000.0,
+    "oz": 0.0283495, "lb": 0.453592,
+    # datos (base byte)
+    "b": 1.0, "kb": 1e3, "mb": 1e6, "gb": 1e9, "tb": 1e12,
+    # volumen (base litro)
+    "ml": 0.001, "l": 1.0, "gal": 3.78541,
+    # tiempo (base segundo)
+    "s": 1.0, "min": 60.0, "h": 3600.0,
+}
+_UNIT_CAT = {
+    **{u: "length" for u in ("mm", "cm", "m", "km", "in", "ft", "yd", "mi")},
+    **{u: "mass" for u in ("mg", "g", "kg", "t", "oz", "lb")},
+    **{u: "data" for u in ("b", "kb", "mb", "gb", "tb")},
+    **{u: "volume" for u in ("ml", "l", "gal")},
+    **{u: "time" for u in ("s", "min", "h")},
+}
+_TEMP_UNITS = {"c", "f", "k"}
+_ALL_UNITS = set(_LINEAR_UNITS) | _TEMP_UNITS
+_UNIT_ALIASES = {
+    "milimetros": "mm", "milimetro": "mm", "centimetros": "cm", "centimetro": "cm",
+    "metros": "m", "metro": "m", "kilometros": "km", "kilometro": "km",
+    "pulgadas": "in", "pulgada": "in", "inch": "in", "inches": "in",
+    "pies": "ft", "pie": "ft", "foot": "ft", "feet": "ft",
+    "yardas": "yd", "yard": "yd", "millas": "mi", "milla": "mi",
+    "mile": "mi", "miles": "mi",
+    "miligramos": "mg", "miligramo": "mg", "gramos": "g", "gramo": "g",
+    "kilogramos": "kg", "kilogramo": "kg", "toneladas": "t", "tonelada": "t",
+    "onzas": "oz", "onza": "oz", "ounce": "oz", "ounces": "oz",
+    "libras": "lb", "libra": "lb", "pound": "lb", "pounds": "lb",
+    "bytes": "b", "byte": "b", "kilobytes": "kb", "kilobyte": "kb",
+    "megabytes": "mb", "megabyte": "mb", "gigabytes": "gb", "gigabyte": "gb",
+    "terabytes": "tb", "terabyte": "tb",
+    "mililitros": "ml", "mililitro": "ml", "litros": "l", "litro": "l",
+    "galones": "gal", "galon": "gal", "gallon": "gal", "gallons": "gal",
+    "segundos": "s", "segundo": "s", "minutos": "min", "minuto": "min",
+    "horas": "h", "hora": "h",
+    "celsius": "c", "centigrados": "c", "fahrenheit": "f", "kelvin": "k",
+}
+_CONVERT_RE = re.compile(
+    r"^\s*([\d][\d.,]*)\s*°?\s*([a-zA-Záéíóúñ]+)\s*(?:a|to|en|->|→|=>)\s*°?\s*([a-zA-Záéíóúñ]+)\s*$",
+    re.I)
+
+
+def _num(raw):
+    """Normaliza '1,000' / '1000' / '100,5' a float."""
+    raw = raw.strip().replace(" ", "")
+    if "," in raw and "." not in raw:
+        raw = raw.replace(",", "") if re.fullmatch(r"\d{1,3}(?:,\d{3})+", raw) \
+            else raw.replace(",", ".")
+    elif "," in raw and "." in raw:
+        raw = raw.replace(",", "")
+    return float(raw)
+
+
+def _norm_unit(tok):
+    t = tok.lower().strip()
+    if t in _UNIT_ALIASES:
+        return _UNIT_ALIASES[t]
+    if t in _ALL_UNITS:
+        return t
+    if len(t) > 1 and t.endswith("s") and t[:-1] in _ALL_UNITS:
+        return t[:-1]  # plural simple ("yards" -> "yd")
+    return None
+
+
+def _to_celsius(v, u):
+    if u == "c":
+        return v
+    if u == "f":
+        return (v - 32) * 5 / 9
+    return v - 273.15  # kelvin
+
+
+def _from_celsius(c, u):
+    if u == "c":
+        return c
+    if u == "f":
+        return c * 9 / 5 + 32
+    return c + 273.15  # kelvin
+
+
+def convert_units(text):
+    """'100 km a mi' -> '62.1371 mi'. None si no es una conversión válida."""
+    m = _CONVERT_RE.match(text or "")
+    if not m:
+        return None
+    try:
+        val = _num(m.group(1))
+    except ValueError:
+        return None
+    u1, u2 = _norm_unit(m.group(2)), _norm_unit(m.group(3))
+    if not u1 or not u2:
+        return None
+    if u1 in _TEMP_UNITS and u2 in _TEMP_UNITS:
+        out = _from_celsius(_to_celsius(val, u1), u2)
+    elif u1 in _TEMP_UNITS or u2 in _TEMP_UNITS:
+        return None  # temperatura ↔ lineal no tiene sentido
+    elif u1 in _LINEAR_UNITS and _UNIT_CAT.get(u1) == _UNIT_CAT.get(u2):
+        out = val * _LINEAR_UNITS[u1] / _LINEAR_UNITS[u2]
+    else:
+        return None
+    return f"{out:.6g} {u2}"
+
+
+# ── Búsqueda de contenido (rg) ───────────────────────────────────────
+# Raíces donde tiene sentido buscar texto. Buscar toda la home es lentísimo
+# (timeout), así que se acota a las carpetas de trabajo reales.
+def _content_roots():
+    home = os.path.expanduser("~")
+    dirs = [os.path.join(home, d) for d in
+            ("Proyectos", "dotfiles", "Documentos", "Descargas", "Escritorio")]
+    dirs = [d for d in dirs if os.path.isdir(d)]
+    return dirs or [home]
+
+
+CONTENT_SEARCH_DIRS = _content_roots()
+MAX_CONTENT = 30
+CONTENT_EXCLUDES = (".git", "node_modules", ".cache", "__pycache__", ".venv", "venv",
+                    "dist", "build", ".mypy_cache", ".pytest_cache")
+
+
+def search_content(q, limit=MAX_CONTENT):
+    """Busca `q` dentro del contenido de archivos de texto con rg.
+
+    Devuelve [(ruta, línea, texto)] con las primeras `limit` coincidencias, o []
+    si rg no está instalado, la consulta está vacía o no hay coincidencias.
+    """
+    rg = shutil.which("rg")
+    term = (q or "").strip()
+    if not rg or not term:
+        return []
+    cmd = [rg, "-i", "--no-heading", "--line-number", "--color", "never",
+           "--max-columns", "200", "--max-count", "3"]  # 3 por archivo
+    for d in CONTENT_EXCLUDES:
+        cmd += ["-g", f"!{d}"]
+    cmd += ["--", term, *CONTENT_SEARCH_DIRS]
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+    except subprocess.TimeoutExpired as e:
+        raw = e.stdout or ""
+        raw = raw.decode() if isinstance(raw, bytes) else raw
+    except Exception:
+        return []
+    else:
+        raw = p.stdout
+    # rg escribe los matches en stdout y los errores (permisos, regex inválida)
+    # en stderr, con rc=2. No filtramos por rc: parseamos stdout siempre.
+    out = []
+    for line in raw.splitlines():
+        parts = line.split(":", 2)
+        if len(parts) == 3 and parts[1].isdigit():
+            out.append((parts[0], int(parts[1]), parts[2].strip()))
+        if len(out) >= limit:
+            break
+    return out
+
+
+# ── Temporizador ──────────────────────────────────────────────────────
+_TIMER_UNITS = {"h": 3600, "hs": 3600, "hora": 3600, "horas": 3600,
+                "m": 60, "min": 60, "minuto": 60, "minutos": 60,
+                "s": 1, "seg": 1, "segundo": 1, "segundos": 1,
+                "d": 86400, "dia": 86400, "dias": 86400}
+_TIMER_PREFIX = ("timer", "temporizador", "alarma", "avisame", "en")
+
+
+def parse_timer(text):
+    """'10m', '1h30', 'timer 5 minutos' -> segundos (int), o None si no es un timer.
+
+    Cada segmento es número+unidad; un número suelto cuenta como minutos.
+    """
+    t = (text or "").lower().strip()
+    for pre in _TIMER_PREFIX:
+        if t == pre:
+            return None
+        if t.startswith(pre + " "):
+            t = t[len(pre) + 1:].strip()
+            break
+    t = t.strip(" .!")
+    if not t:
+        return None
+    total = 0
+    ok = False
+    for num, unit in re.findall(r"(\d+)\s*([a-záéíóúñ]*)", t):
+        u = unit or "m"  # número suelto = minutos
+        if u not in _TIMER_UNITS:
+            return None
+        total += int(num) * _TIMER_UNITS[u]
+        ok = True
+    if not ok:
+        return None
+    # si queda texto que no era número+unidad, no es un timer
+    if re.sub(r"\d+\s*[a-záéíóúñ]*", "", t).strip():
+        return None
+    return total if total > 0 else None
+
+
+def fmt_duration(seconds):
+    """600 -> '10 min'; 5400 -> '1 h 30 min'; 90 -> '1 min 30 s'."""
+    seconds = int(seconds)
+    if seconds <= 0:
+        return "0 s"
+    parts = []
+    for size, name in ((86400, "d"), (3600, "h"), (60, "min"), (1, "s")):
+        val, seconds = divmod(seconds, size)
+        if val:
+            parts.append(f"{val} {name}")
+    return " ".join(parts[:2])
+
+
 # ── Clima / hora ─────────────────────────────────────────────────────
 def weather(city):
     q = urllib.parse.quote(city or WEATHER_CITY)
@@ -371,6 +600,58 @@ def weather(city):
         days.append((f"{dias[day.weekday()]} {day.day}", f"{w['mintempC']}° / {w['maxtempC']}°",
                      ddesc, h.get("chanceofrain", "0")))
     return msg, days
+
+
+def dolar():
+    """Cotizaciones del dólar en Argentina (dolarapi.com, sin API key).
+
+    Devuelve [(nombre, compra, venta, fecha)] o lanza si no hay red.
+    """
+    req = urllib.request.Request("https://dolarapi.com/v1/dolares",
+                                 headers={"User-Agent": "rolight/1.0"})
+    with urllib.request.urlopen(req, timeout=6) as r:
+        data = json.load(r)
+    out = []
+    for d in data:
+        try:
+            out.append((d.get("nombre", "?"),
+                        float(d["compra"]), float(d["venta"]),
+                        d.get("fechaActualizacion", "")))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+def mercadolibre(q, site=None):
+    """Busca en MercadoLibre (API pública, sin auth). Site por defecto MLA (Argentina)."""
+    site = site or os.environ.get("ROLIGHT_ML_SITE", "MLA")
+    url = (f"https://api.mercadolibre.com/sites/{site}/search"
+           f"?q={urllib.parse.quote(q)}&limit=20")
+    req = urllib.request.Request(url, headers={"User-Agent": "rolight/1.0"})
+    with urllib.request.urlopen(req, timeout=8) as r:
+        data = json.load(r)
+    out = []
+    for it in data.get("results", []):
+        out.append({
+            "title": it.get("title", ""),
+            "price": it.get("price"),
+            "permalink": it.get("permalink", ""),
+            "seller": (it.get("seller") or {}).get("nickname", ""),
+        })
+    return out
+
+
+def youtube_search(q, limit=10):
+    """Devuelve [(título, url)] de los primeros N resultados de YouTube vía yt-dlp."""
+    cmd = ["yt-dlp", "--no-warnings", "--flat-playlist", "--print",
+           "%(title)s\t%(webpage_url)s", f"ytsearch{limit}:{q}"]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    out = []
+    for line in r.stdout.splitlines():
+        title, sep, url = line.partition("\t")
+        if sep and url.startswith("http"):
+            out.append((title, url))
+    return out
 
 
 def find_tz(city):
@@ -550,6 +831,109 @@ def nmcli(args, timeout=15):
     except Exception:
         return None
     return p.stdout if p.returncode == 0 else None
+
+
+def lan_info():
+    """Datos de la conexión cableada (LAN) activa, o None si no hay.
+
+    Devuelve {"iface","ip","gw","speed","mac"} leyendo NetworkManager y sysfs.
+    """
+    devs = nmcli(["-f", "DEVICE,TYPE,STATE", "dev"])
+    if not devs:
+        return None
+    iface = None
+    for line in devs.splitlines():
+        parts = nmcli_fields(line)
+        if len(parts) >= 3 and parts[1] == "ethernet" and parts[2] == "connected":
+            iface = parts[0]
+            break
+    if not iface:
+        return None
+    info = {"iface": iface}
+    ip = nmcli(["-f", "IP4.ADDRESS", "dev", "show", iface])
+    if ip:
+        # la salida viene como "IP4.ADDRESS[1]:192.168.100.18/24"
+        val = ip.strip().split(":", 1)[-1].split("/")[0].strip()
+        if val and val != "--":
+            info["ip"] = val
+    gw = nmcli(["-f", "IP4.GATEWAY", "dev", "show", iface])
+    if gw:
+        val = gw.strip().split(":", 1)[-1].strip()
+        if val and val != "--":
+            info["gw"] = val
+    try:
+        with open(f"/sys/class/net/{iface}/speed") as f:
+            s = int(f.read().strip())
+            if s > 0:
+                info["speed"] = f"{s} Mb/s"
+    except Exception:
+        pass
+    try:
+        with open(f"/sys/class/net/{iface}/address") as f:
+            info["mac"] = f.read().strip()
+    except Exception:
+        pass
+    return info
+
+
+# ── Reproductores MPRIS (selector de qué monitorear/pausar) ────────────
+PLAYER_FILE = os.path.join(CACHE, "mpris_player")
+
+
+def _pc(args, timeout=5):
+    try:
+        return subprocess.run(["playerctl", *args], capture_output=True,
+                              text=True, timeout=timeout).stdout.strip()
+    except Exception:
+        return ""
+
+
+def mpris_players():
+    """Reproductores MPRIS activos: [{"name","status","artist","title"}]."""
+    if not shutil.which("playerctl"):
+        return []
+    try:
+        names = subprocess.run(["playerctl", "-l"], capture_output=True,
+                               text=True, timeout=5).stdout.split()
+    except Exception:
+        return []
+    out = []
+    for n in names:
+        def q(args):
+            return _pc(["-p", n, *args])
+        meta = q(["metadata", "--format", "{{artist}}|{{title}}"])
+        artist, _, title = meta.partition("|")
+        out.append({"name": n, "status": q(["status"]),
+                    "artist": artist.strip(), "title": title.strip()})
+    return out
+
+
+def active_player():
+    """Nombre del reproductor elegido, o '' si nunca se eligió."""
+    try:
+        with open(PLAYER_FILE) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def set_active_player(name):
+    os.makedirs(CACHE, exist_ok=True)
+    with open(PLAYER_FILE, "w") as f:
+        f.write(name.strip())
+    return name
+
+
+def control_player(action, name=None):
+    """Ejecuta play-pause/next/previous sobre el reproductor elegido (o `name`)."""
+    target = name or active_player()
+    args = ["playerctl"] + (["-p", target] if target else []) + [action]
+    if not shutil.which("playerctl"):
+        return False
+    try:
+        return subprocess.run(args, capture_output=True, timeout=5).returncode == 0
+    except Exception:
+        return False
 
 
 # ── Portapapeles (copyq) ─────────────────────────────────────────────
@@ -1809,3 +2193,88 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def detect_pm():
+    """Detecta el gestor de paquetes disponible (pacman/yay/paru/apt/dnf/zypper)."""
+    for c in ("apt", "dnf", "zypper", "pacman", "yay", "paru"):
+        if shutil.which(c):
+            return c
+    return ""
+
+
+def package_search(q, pm=""):
+    """Busca paquetes con el gestor detectado. Devuelve [{name, repo, ver, desc}]."""
+    pm = pm or detect_pm()
+    if not pm:
+        return []
+    if pm in ("pacman", "yay", "paru"):
+        cmd = [pm, "-Ss", q]
+    elif pm == "apt":
+        cmd = ["apt", "search", q]
+    elif pm == "dnf":
+        cmd = ["dnf", "search", q]
+    elif pm == "zypper":
+        cmd = ["zypper", "search", q]
+    else:
+        cmd = [pm, "-Ss", q]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=15).stdout
+    except (subprocess.SubprocessError, OSError):
+        return []
+    res = []
+    last = None
+    for line in out.splitlines():
+        m = re.match(r"^([\w./-]+)/([\w.+-]+)\s+([\w.+-]+)", line)
+        if m:
+            repo, name, ver = m.groups()
+            entry = {"name": name, "repo": repo, "ver": ver, "desc": ""}
+            res.append(entry)
+            last = entry
+        elif line[:1] in (" ", "\t") and last is not None:
+            last["desc"] = line.strip()
+    if not res:
+        for line in out.splitlines():
+            s = line.strip()
+            if not s or ":" not in s or s.startswith(("=", "Last", "Matched")):
+                continue
+            name, desc = s.split(":", 1)
+            name = name.split()[0] if name.split() else name
+            res.append({"name": name.strip(), "repo": "", "ver": "", "desc": desc.strip()})
+    seen = set()
+    uniq = []
+    for r in res:
+        if r["name"] not in seen:
+            seen.add(r["name"])
+            uniq.append(r)
+    return uniq[:30]
+
+
+def overseerr_search(url, key, q):
+    """Busca películas/series en Overseerr. Devuelve [{id, type, title, year, overview}]."""
+    u = f"{url.rstrip('/')}/api/v1/search?query={urllib.parse.quote(q)}"
+    req = urllib.request.Request(u, headers={"X-Api-Key": key, "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        data = json.load(r)
+    results = data.get("results", data if isinstance(data, list) else [])
+    out = []
+    for it in results:
+        out.append({
+            "id": it.get("id"),
+            "type": it.get("mediaType", ""),
+            "title": it.get("title") or it.get("name") or "",
+            "year": (it.get("releaseDate") or it.get("firstAirDate") or "")[:4],
+            "overview": (it.get("overview") or "")[:160],
+        })
+    return out
+
+
+def overseerr_request(url, key, media_id, media_type):
+    """Pide una película/serie en Overseerr vía POST /api/v1/request."""
+    u = f"{url.rstrip('/')}/api/v1/request"
+    body = json.dumps({"mediaType": media_type, "mediaId": media_id}).encode()
+    req = urllib.request.Request(u, data=body,
+                                 headers={"X-Api-Key": key, "Content-Type": "application/json"},
+                                 method="POST")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.load(r)
