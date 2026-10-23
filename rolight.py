@@ -376,13 +376,13 @@ def sh(cmd, timeout=10):
 
 def wifi_scan(rescan=False):
     radio = sh(["nmcli", "radio", "wifi"]).strip()
-    saved = {nm_split(l)[0] for l in sh(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"]).splitlines()
+    saved = {core.nm_split(l)[0] for l in sh(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"]).splitlines()
              if "wireless" in l}
     rows = sh(["nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "dev", "wifi", "list",
                "--rescan", "yes" if rescan else "auto"], timeout=20).splitlines()
     nets = {}
     for l in rows:
-        use, ssid, sig, sec = (nm_split(l) + ["", "", "0", ""])[:4]
+        use, ssid, sig, sec = (core.nm_split(l) + ["", "", "0", ""])[:4]
         if not ssid:
             continue
         n = nets.setdefault(ssid, {"ssid": ssid, "signal": 0, "sec": sec, "active": False})
@@ -412,7 +412,7 @@ def vpn_profiles():
     """Conexiones VPN/WireGuard de NetworkManager: [(nombre, tipo)], [activas]."""
     names, active = [], []
     for l in sh(["nmcli", "-t", "-f", "NAME,TYPE,ACTIVE", "connection", "show"], 10).splitlines():
-        parts = nm_split(l)
+        parts = core.nm_split(l)
         if len(parts) < 3 or parts[1] not in ("vpn", "wireguard"):
             continue
         names.append((parts[0], "WireGuard" if parts[1] == "wireguard" else "VPN"))
@@ -511,7 +511,7 @@ def apply_kanshi(outputs):
         args = re.sub(r"position\s+(-?\d+),(-?\d+)", r"position \1 \2", args)
         # kanshi usa el sentido de wl_output (antihorario) y swaymsg el horario:
         # el 270 de kanshi es el 90 de sway y viceversa
-        args = re.sub(r"transform\s+(\S+)", lambda m: f"transform {kanshi_transform(m[1])}", args)
+        args = re.sub(r"transform\s+(\S+)", lambda m: f"transform {core.kanshi_transform(m[1])}", args)
         cmds.append(f"output {name} {args}")
     for name in connected - listed:
         cmds.append(f"output {name} disable")
@@ -522,8 +522,22 @@ def apply_kanshi(outputs):
 
 
 def glob_scripts():
+    """Scripts de monitores de ~/.config/sway/scripts (el resto no va en este menú).
+
+    Filtra por nombre y saltea backups: antes se listaban acá todos los .sh de
+    la carpeta (ai-clip, voz, glass…) y también los .bak, que no son opciones
+    de pantalla.
+    """
     import glob
-    return glob.glob(os.path.join(MONITOR_SCRIPTS, "*.sh"))
+    out = []
+    for path in glob.glob(os.path.join(MONITOR_SCRIPTS, "*.sh")):
+        base = os.path.basename(path).lower()
+        if ".bak" in base or base.endswith("~"):
+            continue
+        if not any(k in base for k in ("monitor", "pantalla", "display")):
+            continue
+        out.append(path)
+    return sorted(out)
 
 
 # ── Bitwarden (rbw) ──────────────────────────────────────────────────
@@ -2157,7 +2171,7 @@ class Rolight:
             outs = []
         connected = {o["name"] for o in outs}
         active = ", ".join(f"{o['name']} {o['rect']['width']}×{o['rect']['height']}"
-                           + (f" ↻{kanshi_transform(o['transform'])}" if o.get("transform") not in (None, "normal") else "")
+                           + (f" ↻{core.kanshi_transform(o['transform'])}" if o.get("transform") not in (None, "normal") else "")
                            for o in outs if o.get("active"))
         ql = q.lower()
         items = []
@@ -2177,8 +2191,9 @@ class Rolight:
                 continue
             items.append(Item(base, "script de sway", "utilities-terminal",
                               lambda p=path: core.spawn(["sh", p]), "Scripts"))
-        items.append(Item("Configurar pantallas", "nwg-displays", "preferences-desktop-display",
-                          lambda: core.spawn(["nwg-displays"]), "Opciones"))
+        if shutil_which("nwg-displays"):
+            items.append(Item("Configurar pantallas", "nwg-displays", "preferences-desktop-display",
+                              lambda: core.spawn(["nwg-displays"]), "Opciones"))
         self.render(items, f"<span alpha='60%'>Activos:</span> {GLib.markup_escape_text(active)}",
                     "↵ aplicar perfil · ⌫ salir")
 
