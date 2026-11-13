@@ -1715,6 +1715,7 @@ POWER = [
     ("Cerrar sesión", "logout", "system-log-out", "logoff logout salir exit"),
     ("Reiniciar", "reboot", "system-reboot", "reboot restart reinicio"),
     ("Apagar", "poweroff", "system-shutdown", "shutdown poweroff apagar"),
+    ("Arrancar en Windows", "windows", "computer", "windows bootnext dual dualboot arrancar"),
 ]
 
 
@@ -1997,6 +1998,9 @@ def do_power(act):
             return
         spawn(cmd)
         return
+    if act == "windows":
+        spawn([os.path.expanduser("~/.local/bin/reboot-to-windows")])
+        return
     cmds = {
         "suspend": ["systemctl", "suspend"],
         "logout": logout_cmd(),
@@ -2030,7 +2034,7 @@ def handle_info(info, text):
     elif kind == "app-remmina":
         spawn(["remmina"])
     elif kind == "power":
-        confirm_power(val) if val in ("reboot", "poweroff", "logout") else do_power(val)
+        confirm_power(val) if val in ("reboot", "poweroff", "logout", "windows") else do_power(val)
     elif kind == "dopower":
         do_power(val)
     elif kind == "home":
